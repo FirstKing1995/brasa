@@ -1,6 +1,6 @@
 /* BRASA · service worker: rede primeiro, cache como reserva (funciona offline com a última versão vista).
    Chamadas à API (script.google.com) e a outros sites passam direto, sem cache. */
-var V = 'brasa-v3';
+var V = 'brasa-v4';
 var SHELL = ['./', 'index.html', 'manifest.webmanifest', 'assets/css/brasa.css', 'assets/css/app.css',
   'assets/js/config.js', 'assets/js/core.js', 'assets/js/checkout.js', 'assets/js/app.js', 'assets/js/app-pages.js', 'assets/js/app-watch.js', 'assets/js/app-banners.js', 'assets/img/icon-192.png'];
 self.addEventListener('install', function (e) {

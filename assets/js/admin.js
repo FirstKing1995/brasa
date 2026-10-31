@@ -233,7 +233,7 @@
     if (!a) return;
     if (a.pending_affiliations != null) S.counts.aff = a.pending_affiliations;
     if (a.unread_messages != null) S.counts.msg = a.unread_messages;
-    if (a.leads_unassigned != null || a.followups_overdue != null) S.counts.crm = (a.leads_unassigned || 0) + (a.followups_overdue || 0);
+    if (a.crm_failing != null) S.counts.crm = a.crm_failing || 0;
     paintCounts();
   }
   function refreshCounts(force) {
@@ -248,9 +248,9 @@
      --------------------------------------------------------------- */
   var NAV = [
     ['/', 'Painel', 'chart', ''], ['/cursos', 'Cursos', 'cap', ''], ['/vendas', 'Vendas', 'wallet', ''],
-    ['/alunos', 'Alunos', 'users', ''], ['/afiliados', 'Afiliados', 'link', 'aff'], ['/comercial', 'Comercial', 'target', 'crm'],
+    ['/alunos', 'Alunos', 'users', ''], ['/afiliados', 'Afiliados', 'link', 'aff'], ['/vendedores', 'Vendedores', 'target', ''],
     ['/cupons', 'Cupons', 'tag', ''], ['/banners', 'Banners', 'image', ''], ['/mensagens', 'Mensagens', 'mail', ''],
-    ['/suporte', 'Suporte', 'chat', 'msg'], ['/config', 'Configurações', 'settings', '']
+    ['/suporte', 'Suporte', 'chat', 'msg'], ['/config', 'Configurações', 'settings', 'crm']
   ];
   function renderShell() {
     app.className = 'adm';
@@ -407,7 +407,8 @@
       .on('/alunos', R(pageStudents))
       .on('/afiliados', R(pageAffiliates))
       .on('/cupons', R(pageCoupons))
-      .on('/comercial', R(plusPage('comercial')))
+      .on('/vendedores', R(plusPage('vendedores')))
+      .on('/comercial', R(plusPage('vendedores')))
       .on('/banners', R(plusPage('banners')))
       .on('/mensagens', R(plusPage('mensagens')))
       .on('/suporte', R(pageSupport))
@@ -495,8 +496,7 @@
       if (a.unread_messages) items.push({ href: '#/suporte', tone: 'bad', icon: 'chat', n: a.unread_messages, t: a.unread_messages === 1 ? 'mensagem não lida no suporte' : 'mensagens não lidas no suporte' });
       if (a.courses_without_lp) items.push({ href: '#/cursos', tone: 'info', icon: 'sparkles', n: a.courses_without_lp, t: a.courses_without_lp === 1 ? 'curso à venda sem página gerada' : 'cursos à venda sem página gerada' });
       if (k.abandoned_24h) items.push({ href: '#/vendas?status=abandoned&periodo=24h', tone: 'warn', icon: 'cart', n: k.abandoned_24h, t: k.abandoned_24h === 1 ? 'carrinho abandonado nas últimas 24h' : 'carrinhos abandonados nas últimas 24h' });
-      if (a.leads_unassigned) items.push({ href: '#/comercial', tone: 'warn', icon: 'target', n: a.leads_unassigned, t: a.leads_unassigned === 1 ? 'lead sem dono na fila comercial' : 'leads sem dono na fila comercial' });
-      if (a.followups_overdue) items.push({ href: '#/comercial', tone: 'bad', icon: 'clock', n: a.followups_overdue, t: a.followups_overdue === 1 ? 'follow-up atrasado com um lead' : 'follow-ups atrasados com leads' });
+      if (a.crm_failing) items.push({ href: '#/config?s=comercial', tone: 'bad', icon: 'target', n: a.crm_failing, t: a.crm_failing === 1 ? 'aviso não chegou ao BRASA CRM' : 'avisos não chegaram ao BRASA CRM' });
       var checks = [
         ['mp', 'Mercado Pago', 'Cole o token de acesso para receber', 'Pagamentos conectados'],
         ['ai', 'Inteligência artificial', 'Adicione a chave para gerar páginas', 'Chave configurada'],

@@ -6,7 +6,9 @@
    ===================================================================== */
 (function (w) {
   'use strict';
-  var KEY = 'brasa:demo:db:v8';
+  var KEY = 'brasa:demo:db:v9';
+  // ponte com a demo do BRASA CRM (mesma origem): eventos para lá, condições especiais para cá
+  var PONTE_CRM = 'brasa_crm_ponte', PONTE_OFERTAS = 'brasa_ponte_ofertas', PONTE_CHAVE = 'demo-ponte-brasa-crm-2026-0000000000000000';
   var seeding = false;
   var DAY = 864e5;
 
@@ -51,8 +53,16 @@
 
   /* ---------- banco local ---------- */
   var db = null, dirty = false;
+  function drainOffers() {
+    var q = []; try { q = JSON.parse(localStorage.getItem(PONTE_OFERTAS) || '[]'); } catch (e) {}
+    if (!q.length || !w.BrasaLogic) return;
+    try { localStorage.removeItem(PONTE_OFERTAS); } catch (e) {}
+    var app = w.BrasaLogic(env);
+    q.forEach(function (o) { try { app.handle(Object.assign({}, o, { action: 'bridgeOffer', key: PONTE_CHAVE })); } catch (e) { if (w.console) console.warn('ponte', e); } });
+    save();
+  }
   function load() {
-    try { var raw = localStorage.getItem(KEY); if (raw) { db = JSON.parse(raw); return; } } catch (e) {}
+    try { var raw = localStorage.getItem(KEY); if (raw) { db = JSON.parse(raw); drainOffers(); return; } } catch (e) {}
     if (!db) {
       seeding = true; db = seed(); dirty = true;
       try { postSeed(); } catch (e) { if (w.console) console.error('postSeed', e); }
@@ -131,6 +141,13 @@
       if (!seeding && w.B && w.B.toast) setTimeout(function () { w.B.toast('E-mail simulado para ' + to + ': ' + subject, 'info', 4200); }, 300);
     },
     ai: function (system, user) { return fakeAI(user); },
+    // BRASA CRM: as duas demos ficam no mesmo site, então a "rede" é o localStorage
+    crm: function (url, payload) {
+      var q = []; try { q = JSON.parse(localStorage.getItem(PONTE_CRM) || '[]'); } catch (e) {}
+      q.push(payload); if (q.length > 300) q = q.slice(-300);
+      try { localStorage.setItem(PONTE_CRM, JSON.stringify(q)); } catch (e) {}
+      return { code: 200, text: '{"ok":true}' };
+    },
     capi: function (pixel, token, ver, payload) { env.log('info', 'capi', 'Purchase enviado ao Pixel ' + pixel + ' (simulado)', {}); },
     github: function (path) { return env.siteUrl() + 'lp.html?c=' + encodeURIComponent(path.split('/')[1] || ''); },
     upload: function (name, mime, data) { return 'data:' + mime + ';base64,' + data; },
@@ -306,7 +323,7 @@
 
     /* ----- configuração ----- */
     S.__config = { brand_name: 'BRASA', brand_tagline: 'Cursos para quem quer viver de verdade', support_whatsapp: '(88) 90000-0000', support_email: 'suporte@brasa.demo', pixel_id: '1234567890123456', admin_email: 'admin@brasa.demo', email_sender_name: 'BRASA', github_repo: 'seuusuario/brasa', mp_public_key: 'TEST-demo-0000-0000', card_mode: 'transparent' };
-    S.__secrets = { TOKEN_SECRET: pepper, MP_ACCESS_TOKEN: 'APP_USR-demo', AI_API_KEY: 'sk-ant-demo', GITHUB_TOKEN: 'ghp_demo' };
+    S.__secrets = { TOKEN_SECRET: pepper, MP_ACCESS_TOKEN: 'APP_USR-demo', AI_API_KEY: 'sk-ant-demo', GITHUB_TOKEN: 'ghp_demo', CRM_WEBHOOK_URL: 'demo://brasa-crm', CRM_BRIDGE_KEY: PONTE_CHAVE };
 
     /* ----- afiliações ----- */
     function aff(u, c, status, commission, days) { var a = { id: id('a'), created_at: ago(days || 30), updated_at: ago(days || 30), user_id: u.id, course_id: c.id, status: status, commission: commission || 0, pixel_id: '', note: '' }; S.Affiliations.push(a); return a; }
@@ -483,49 +500,28 @@
     return S;
   }
 
-  /* ---------- depois de semear: o comercial já trabalhou alguns leads ---------- */
+  /* ---------- depois de semear: os leads vão para o BRASA CRM e um vendedor fecha com condição especial ---------- */
   function postSeed() {
     var app = w.BrasaLogic(env);
     app.syncLeads();
     function tok(email, as) { var r = app.handle({ action: 'login', email: email, password: 'brasa123', as: as }); return r.ok ? r.data.token : ''; }
-    function price(courseId, pct) { var c = (db.Courses || []).filter(function (x) { return x.id === courseId; })[0]; return c ? Math.ceil(c.price * (1 - pct) / 10) * 10 - 3 : 0; }
-    var rafa = tok('vendas@brasa.demo', 'seller'), duda = tok('duda@brasa.demo', 'seller'), adm = tok('admin@brasa.demo', 'admin');
-    var mineR = (app.handle({ action: 'crmBoard', token: rafa, scope: 'mine' }).data || {}).leads || [];
-    var mineD = (app.handle({ action: 'crmBoard', token: duda, scope: 'mine' }).data || {}).leads || [];
-    var H = Date.now();
-    var carts = mineR.filter(function (l) { return l.source === 'abandoned' || l.source === 'pix_expired'; });
-    if (carts[0]) {
-      app.handle({ action: 'crmLog', token: rafa, id: carts[0].id, channel: 'wa', template: 'wa_lead_cart', title: 'Pagamento não concluído', text: 'Oi! Vi que você começou a garantir o curso e o pagamento não foi concluído. Ficou alguma dúvida?' });
-      app.handle({ action: 'crmNote', token: rafa, id: carts[0].id, text: 'Respondeu que vai pagar quando cair o salário, dia 5. Retornar.' });
-      app.handle({ action: 'crmLeadSave', token: rafa, lead: { id: carts[0].id, next_at: H - 3 * 3600e3 } });
-    }
-    if (carts[1]) {
-      app.handle({ action: 'crmLog', token: rafa, id: carts[1].id, channel: 'wa', template: 'wa_lead_cart', title: 'Pagamento não concluído', text: 'Oi! Posso te ajudar a finalizar?' });
-      app.handle({ action: 'crmOffer', token: rafa, lead_id: carts[1].id, price: price(carts[1].course_id, 0.2), hours: 48 });
-      app.handle({ action: 'crmLeadSave', token: rafa, lead: { id: carts[1].id, next_at: H + 2 * 3600e3 } });
-    }
-    if (carts[2]) {
-      app.handle({ action: 'crmLog', token: rafa, id: carts[2].id, channel: 'wa', template: 'wa_lead_cart', title: 'Pagamento não concluído', text: 'Oi! Ficou alguma dúvida sobre o curso?' });
-      app.handle({ action: 'crmLeadSave', token: rafa, lead: { id: carts[2].id, status: 'lost', lost_reason: 'Achou caro' } });
-    }
-    var win = carts[3] || mineR.filter(function (l) { return l.email && l.course_id; })[0];
-    if (win) {
-      var off = app.handle({ action: 'crmOffer', token: rafa, lead_id: win.id, price: price(win.course_id, 0.25), hours: 24 });
+    var adm = tok('admin@brasa.demo', 'admin');
+    // um carrinho abandonado que o closer do CRM recuperou com uma condição especial
+    var cart = (db.Leads || []).filter(function (l) { return (l.source === 'abandoned' || l.source === 'pix_expired') && l.email; })[0];
+    var c = cart && (db.Courses || []).filter(function (x) { return x.id === cart.course_id; })[0];
+    if (cart && c && c.status === 'published') {
+      var off = app.handle({ action: 'bridgeOffer', key: PONTE_CHAVE, course: c.slug, price: Math.ceil(c.price * 0.8 / 10) * 10 - 3, hours: 24, seller_email: 'vendas@brasa.demo', seller_name: 'Rafa Monteiro', email: cart.email, name: cart.name, note: 'Recuperação de carrinho' });
       if (off.ok) {
-        var co = app.handle({ action: 'checkout', course_id: off.data.offer.course_id, name: win.name, email: win.email, phone: win.phone, method: 'pix', offer: off.data.offer.code, src: 'page' });
+        var co = app.handle({ action: 'checkout', course_id: c.id, name: cart.name, email: cart.email, phone: cart.phone, method: 'pix', offer: off.data.code, src: 'page' });
         if (co.ok) w.BrasaDemo.pay(co.data.order_id);
       }
     }
-    mineD.slice(0, 2).forEach(function (l, i) {
-      app.handle({ action: 'crmLog', token: duda, id: l.id, channel: 'wa', template: l.source === 'inactive' ? 'wa_lead_inactive' : 'wa_lead_upsell', title: 'Primeiro contato', text: 'Oi! Tudo certo por aí?' });
-      app.handle({ action: 'crmLeadSave', token: duda, lead: { id: l.id, next_at: H + (i ? 26 : 1) * 3600e3 } });
-    });
     var inactive = (app.handle({ action: 'adminStudents', token: adm, inactive_days: 14 }).data || {}).students || [];
-    if (inactive[0]) app.handle({ action: 'adminLogContact', token: adm, user_id: inactive[0].id, channel: 'wa', template: 'wa_inactive', title: 'Faz tempo que não acessa', text: 'Oi! Faz um tempo que você não entra na plataforma...' });
+    if (inactive[0]) app.handle({ action: 'adminLogContact', token: adm, user_id: inactive[0].id, channel: 'wa', template: 'wa_inactive', title: 'Faz tempo que não acessa', text: 'Oi! Faz um tempo que você não entra na plataforma. Posso te ajudar a retomar?' });
   }
 
   /* ---------- API pública da demo ---------- */
-  var CREDS = { app: ['aluno@brasa.demo', 'brasa123'], admin: ['admin@brasa.demo', 'brasa123'], aff: ['afiliado@brasa.demo', 'brasa123'], sales: ['vendas@brasa.demo', 'brasa123'] };
+  var CREDS = { app: ['aluno@brasa.demo', 'brasa123'], admin: ['admin@brasa.demo', 'brasa123'], aff: ['afiliado@brasa.demo', 'brasa123'] };
   w.BrasaDemo = {
     creds: CREDS,
     call: function (body) {

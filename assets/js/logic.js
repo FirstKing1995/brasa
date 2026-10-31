@@ -45,13 +45,14 @@ var BrasaLogic = (function () {
     Leads: ['id', 'created_at', 'updated_at', 'user_id', 'name', 'email', 'phone', 'source', 'ref', 'course_id', 'status', 'seller_id', 'value', 'next_at', 'last_at', 'lost_reason', 'order_id', 'note'],
     Activities: ['id', 'ts', 'lead_id', 'user_id', 'actor_id', 'type', 'text', 'data'],
     Offers: ['id', 'created_at', 'code', 'seller_id', 'lead_id', 'course_id', 'email', 'price', 'expires_at', 'max_uses', 'uses', 'order_id', 'note'],
-    Intents: ['id', 'ts', 'course_id', 'name', 'email', 'phone', 'aff_code', 'src', 'done']
+    Intents: ['id', 'ts', 'course_id', 'name', 'email', 'phone', 'aff_code', 'src', 'done'],
+    CrmOutbox: ['id', 'ts', 'event', 'payload', 'tries', 'last_error', 'sent_at']
   };
   var NUM = {};
   ['created_at', 'updated_at', 'paid_at', 'order', 'price', 'anchor_price', 'max_installments', 'guarantee_days', 'access_days',
     'aff_commission', 'aff_cookie_days', 'lp_updated_at', 'ads_updated_at', 'scarcity_until', 'release_days', 'release_at', 'duration_min', 'xp',
     'expires_at', 'position', 'completed_at', 'discount', 'amount', 'installments', 'fee', 'net', 'commission', 'ts', 'value',
-    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at'].forEach(function (k) { NUM[k] = 1; });
+    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at', 'tries', 'sent_at'].forEach(function (k) { NUM[k] = 1; });
   var BOOL = {};
   ['featured', 'show_title', 'free_preview', 'aff_enabled', 'aff_auto', 'active', 'liked', 'read_admin', 'read_user', 'recovery_sent', 'capi_sent', 'bump_enabled', 'upsell_enabled', 'done'].forEach(function (k) { BOOL[k] = 1; });
   var ID_PREFIX = { Users: 'u', Courses: 'c', Seasons: 's', Lessons: 'l', Enrollments: 'e', Progress: 'p', Orders: 'o', Affiliations: 'a', Clicks: 'k', Commissions: 'm', Payouts: 'y', Coupons: 'q', Messages: 'g', Certificates: 'x', Logs: 'z', Templates: 't', Emails: 'w', Banners: 'b', Leads: 'd', Activities: 'v', Offers: 'f', Intents: 'i' };
@@ -95,7 +96,7 @@ var BrasaLogic = (function () {
     email_provider: 'gmail',
     email_from: ''
   };
-  var SECRET_KEYS = ['MP_ACCESS_TOKEN', 'AI_API_KEY', 'GITHUB_TOKEN', 'META_CAPI_TOKEN', 'EMAIL_API_KEY'];
+  var SECRET_KEYS = ['MP_ACCESS_TOKEN', 'AI_API_KEY', 'GITHUB_TOKEN', 'META_CAPI_TOKEN', 'EMAIL_API_KEY', 'CRM_WEBHOOK_URL'];
 
   var RANKS = [
     { min: 1, name: 'Iniciado' }, { min: 3, name: 'Andarilho' }, { min: 5, name: 'Guerreiro' },
@@ -125,7 +126,7 @@ var BrasaLogic = (function () {
     welcome: 'Boas-vindas após a compra', access: 'Reenvio de acesso (quem ainda não tem senha)', code: 'Código para criar ou trocar a senha',
     recovery: 'Recuperação de carrinho', inactive: 'Lembrete para quem parou de assistir', bump_delivery: 'Entrega do produto do order bump',
     aff_sale: 'Afiliado: venda confirmada', aff_approved: 'Afiliado: afiliação aprovada', aff_rejected: 'Afiliado: afiliação recusada',
-    payout: 'Comissão paga', support_reply: 'Resposta do suporte', seller_invite: 'Convite para vendedor',
+    payout: 'Comissão paga', support_reply: 'Resposta do suporte',
     seller_sale: 'Vendedor: venda fechada', offer: 'Condição especial enviada pelo vendedor', launch: 'Estreia de curso (lista de espera)'
   };
   var EMAIL_VARS = {
@@ -140,7 +141,6 @@ var BrasaLogic = (function () {
     aff_rejected: ['primeiro_nome', 'curso', 'marca'],
     payout: ['primeiro_nome', 'valor', 'quantidade', 'marca'],
     support_reply: ['primeiro_nome', 'mensagem', 'marca'],
-    seller_invite: ['primeiro_nome', 'comissao_info', 'cta_acesso', 'marca'],
     seller_sale: ['primeiro_nome', 'curso', 'valor', 'comissao_frase', 'marca'],
     offer: ['primeiro_nome', 'curso', 'valor', 'valor_oferta', 'validade', 'vendedor', 'marca'],
     launch: ['primeiro_nome', 'nome', 'curso', 'valor', 'marca']
@@ -191,7 +191,6 @@ var BrasaLogic = (function () {
     E('aff_rejected', 'Pedido de afiliação: {curso}', 'Pedido não aprovado', 'Desta vez sua afiliação a {curso} não foi aprovada. Fale com o suporte se quiser entender o motivo.', 'Abrir painel', 9),
     E('payout', 'Pagamento de comissões: {valor}', 'Comissão paga', 'Enviamos **{valor}** referentes a {quantidade} venda(s) para a sua chave Pix.', 'Ver extrato', 10),
     E('support_reply', 'Nova resposta do suporte', 'Você tem uma resposta', '{mensagem}', 'Responder', 11),
-    E('seller_invite', 'Seu acesso à área comercial da {marca}', 'Bem-vindo ao time, {primeiro_nome}.', 'Você foi cadastrado como vendedor. Na área comercial você recebe os leads, conversa pelo WhatsApp e gera links de pagamento com condição especial.{comissao_info}', '{cta_acesso}', 12),
     E('seller_sale', 'Venda fechada: {curso}', 'Fechou, {primeiro_nome}.', '**{curso}** foi pago com a sua condição especial: {valor}.\n\n{comissao_frase}', 'Abrir área comercial', 13),
     E('offer', 'Condição especial para {curso}', '{primeiro_nome}, separei uma condição para você', '**{curso}** por **{valor_oferta}** (de {valor}).\n\nA condição vale até {validade} e é só sua.\n\n{vendedor}', 'Garantir com desconto', 14),
     E('launch', 'Estreou: {curso}', '{primeiro_nome}, chegou a hora.', 'Você pediu para ser avisado e o dia chegou: **{curso}** acabou de estrear na {marca}.\n\nOs episódios já estão no ar, esperando por você.', 'Ver o curso', 15),
@@ -202,11 +201,6 @@ var BrasaLogic = (function () {
     W('affiliate', 'wa_aff_month', 'Resultado do mês', 'Oi, {primeiro_nome}! Seu resumo de {mes}:\n\nVendas: {vendas_mes}\nValor vendido: {valor_vendido_mes}\nComissão do mês: {comissao_mes}\nDisponível para receber: {comissao_disponivel}\nEm garantia: {comissao_a_liberar}\n\nSeu painel: {link_painel}', 1),
     W('affiliate', 'wa_aff_payout', 'Comissão disponível', 'Oi, {primeiro_nome}! Você tem {comissao_disponivel} liberado para receber. Vou pagar na chave Pix {chave_pix}. Confere se está certa?', 2),
     W('affiliate', 'wa_aff_push', 'Incentivo do ranking', 'Oi, {primeiro_nome}! Você está em {ranking_posicao} no ranking de {mes}, com {vendas_mes} vendas. Bora buscar o topo? Seu link: {link_principal}', 3),
-    W('lead', 'wa_lead_cart', 'Pagamento não concluído', 'Oi, {primeiro_nome}! Aqui é {vendedor}, da {marca}. Vi que você começou a garantir {curso} e o pagamento não foi concluído. Ficou alguma dúvida? Posso te ajudar a finalizar.', 1),
-    W('lead', 'wa_lead_offer', 'Condição especial', 'Oi, {primeiro_nome}! Consegui uma condição especial para você: {curso} por {valor_oferta} (de {valor}). Vale até {validade}.\n\nGaranta por aqui: {link_oferta}', 2),
-    W('lead', 'wa_lead_upsell', 'Próximo curso', 'Oi, {primeiro_nome}! Parabéns por concluir {curso_concluido}. O próximo passo natural é {curso}. Quer que eu te conte como funciona?', 3),
-    W('lead', 'wa_lead_inactive', 'Reativação', 'Oi, {primeiro_nome}! Senti sua falta na {marca}. Você parou em {episodio_atual}. Tem alguma coisa travando? Posso te ajudar a retomar.', 4),
-    W('lead', 'wa_lead_waitlist', 'Estreia (lista de espera)', 'Oi, {primeiro_nome}! Aqui é {vendedor}, da {marca}. Você pediu para ser avisado quando {curso} estreasse, e estreou. Dá uma olhada: {link_curso}\n\nSe quiser, te passo a condição de estreia.', 5),
     W('order', 'wa_order_recovery', 'Recuperar pagamento', 'Oi, {primeiro_nome}! Vi que você tentou garantir {curso} e o pagamento não foi concluído. Deixei um link para você finalizar em 1 minuto: {link_recuperacao}', 1),
     W('order', 'wa_order_access', 'Acesso da compra', 'Oi, {primeiro_nome}! Obrigado por garantir {curso}. Seu acesso: {link_acesso}\n\nQualquer dúvida, é só chamar.', 2)
   ];
@@ -899,6 +893,7 @@ var BrasaLogic = (function () {
         var b = evalBadges(r.user, {});
         if (b.fresh.length) T('Users').update(r.user.id, { badges: b.all.join(',') });
         safe(function () { resolveLeadsFor(upd); }, 'crm');
+        if (course) crmSend(upd.amount > 0 ? 'compra_aprovada' : 'cadastro', crmOrder(upd, course));
         if (course) {
           sendWelcome(T('Users').get(r.user.id), course, upd);
           if (upd.bump_type === 'product' && upd.bump_delivery) safe(function () {
@@ -910,7 +905,7 @@ var BrasaLogic = (function () {
           }, 'mail-aff');
           if (upd.seller_id) safe(function () {
             var sl = T('Users').get(upd.seller_id);
-            sendTpl('seller_sale', sl.email, { nome: sl.name, primeiro_nome: firstName(sl.name), curso: course.title, valor: money(upd.amount), comissao_frase: comm.seller ? 'Sua comissão: **' + money(comm.seller) + '**, liberada depois do período de garantia.' : '' }, siteUrl() + 'comercial.html', sl.id);
+            sendTpl('seller_sale', sl.email, { nome: sl.name, primeiro_nome: firstName(sl.name), curso: course.title, valor: money(upd.amount), comissao_frase: comm.seller ? 'Sua comissão: **' + money(comm.seller) + '**, liberada depois do período de garantia.' : '' }, siteUrl() + 'crm/', sl.id);
           }, 'mail-seller');
           if (c.notify_sales) safe(function () {
             var sname = upd.seller_id ? ((T('Users').get(upd.seller_id) || {}).name || '') : '';
@@ -936,7 +931,9 @@ var BrasaLogic = (function () {
         T('Commissions').where(function (m) { return m.order_id === cur.id; }).forEach(function (m) {
           T('Commissions').update(m.id, { status: m.status === 'paid' ? 'reversed' : 'canceled' });
         });
-        return T('Orders').update(cur.id, { status: st, status_detail: (p && p.status_detail) || st });
+        var out = T('Orders').update(cur.id, { status: st, status_detail: (p && p.status_detail) || st });
+        crmSend('reembolso', Object.assign(crmOrder(out, idx().byId[out.course_id]), { motivo: st === 'chargeback' ? 'chargeback' : 'reembolso' }));
+        return out;
       });
     }
     function applyPayment(o, p) {
@@ -1169,6 +1166,7 @@ var BrasaLogic = (function () {
           var expAt = now() + Math.max(30, conf.pix_expiration_min) * 60000;
           var px = env.pay.pix({ amount: amount, description: desc, email: email, name: name, doc: doc, order_id: order.id, notification_url: webhookUrl(), expires_at: expAt });
           T('Orders').update(order.id, { mp_payment_id: String(px.id), status_detail: px.status_detail || 'pending_waiting_transfer' });
+          crmSend('pix_gerado', Object.assign(crmOrder(T('Orders').get(order.id), c), { pix_copia_cola: px.qr_code || '', expira_em: expAt }));
           return Object.assign(out, { status: 'pending', method: 'pix', pix: { qr_code: px.qr_code, qr_base64: px.qr_base64, ticket_url: px.ticket_url, expires_at: expAt } });
         }
         if (!(cd && cd.token)) {
@@ -1202,6 +1200,7 @@ var BrasaLogic = (function () {
       }
       if (mapStatus(p.status) === 'rejected') {
         T('Orders').update(order.id, { status: 'rejected', status_detail: p.status_detail || 'rejected' });
+        crmSend('recusado', Object.assign(crmOrder(T('Orders').get(order.id), c), { motivo: cardMessage(p.status_detail) }));
         return Object.assign(out, { status: 'rejected', method: 'card', status_detail: p.status_detail, message: cardMessage(p.status_detail) });
       }
       return Object.assign(out, { status: 'pending', method: 'card', payment_id: String(p.id), status_detail: p.status_detail, message: cardMessage(p.status_detail) });
@@ -1737,8 +1736,7 @@ var BrasaLogic = (function () {
           unread_messages: T('Messages').where(function (m) { return m.from === 'user' && !m.read_admin; }).length,
           courses_without_lp: I.courses.filter(function (c) { return VISIBLE[c.status] && !c.lp; }).length,
           drafts: I.courses.filter(function (c) { return c.status === 'draft'; }).length,
-          leads_unassigned: safe(function () { return T('Leads').where(function (l) { return OPEN[l.status] && !l.seller_id; }).length; }, 'dash') || 0,
-          followups_overdue: safe(function () { return T('Leads').where(function (l) { return OPEN[l.status] && l.next_at && l.next_at < t; }).length; }, 'dash') || 0,
+          crm_failing: safe(function () { return T('CrmOutbox').where(function (r) { return !r.sent_at && r.last_error; }).length; }, 'dash') || 0,
           setup: { mp: !!env.secret('MP_ACCESS_TOKEN'), ai: !!env.secret('AI_API_KEY'), site_url: !!cfg().site_url, api_url: !!apiUrl() }
         }
       };
@@ -2183,7 +2181,7 @@ var BrasaLogic = (function () {
       var amount = round2(open.reduce(function (s, m) { return s + m.amount; }, 0));
       var p = T('Payouts').insert({ aff_id: u.id, amount: amount, count: open.length, pix_key: u.pix_key, note: trim(req.note).slice(0, 300) });
       open.forEach(function (m) { T('Commissions').update(m.id, { status: 'paid', paid_at: now(), payout_id: p.id }); });
-      sendTpl('payout', u.email, { nome: u.name, primeiro_nome: firstName(u.name), valor: money(amount), quantidade: String(open.length) }, siteUrl() + (hasRole(u, 'seller') && !hasRole(u, 'affiliate') ? 'comercial.html' : 'afiliado.html'), u.id);
+      sendTpl('payout', u.email, { nome: u.name, primeiro_nome: firstName(u.name), valor: money(amount), quantidade: String(open.length) }, siteUrl() + (hasRole(u, 'seller') && !hasRole(u, 'affiliate') ? 'crm/' : 'afiliado.html'), u.id);
       return { payout: p };
     };
 
@@ -2570,21 +2568,142 @@ var BrasaLogic = (function () {
         overdue: !!(OPEN[l.status] && l.next_at && l.next_at < t), due_today: !!(OPEN[l.status] && l.next_at && dayKey(l.next_at) === dayKey(t))
       };
     }
+    /* ---------- BRASA CRM ----------
+       A plataforma avisa o CRM (planilha própria) de tudo que vira oportunidade de venda:
+       compra, cadastro grátis, Pix gerado e vencido, cartão recusado, carrinho abandonado,
+       reembolso, aluno parado, curso concluído e estreia para a lista de espera.
+       Cada aviso passa por CrmOutbox: se o CRM não responder, a rotina de hora em hora tenta de novo.
+       No sentido contrário, o CRM pede a lista de cursos e cria condições especiais (bridgeOffer)
+       usando a chave CRM_BRIDGE_KEY. */
+    var CRM_EVENT = { abandoned: 'carrinho_abandonado', pix_expired: 'pix_expirado', upsell: 'curso_concluido', inactive: 'aluno_parado', waitlist: 'lista_espera' };
+    function crmOn() { return !!(env.crm && env.secret('CRM_WEBHOOK_URL')); }
+    function crmCourse(c) { return c ? { produto: c.title, curso_slug: c.slug, curso_preco: c.price, link_curso: siteUrl() + 'lp.html?c=' + encodeURIComponent(c.slug), link_checkout: siteUrl() + 'checkout.html?c=' + encodeURIComponent(c.slug) } : {}; }
+    function crmOrder(o, c) {
+      var s = o.seller_id ? T('Users').get(o.seller_id) : null, of = o.offer_id ? T('Offers').get(o.offer_id) : null;
+      return Object.assign(crmCourse(c), {
+        nome: o.name, email: o.email, telefone: o.phone, valor: o.amount, pedido_id: o.id, metodo: o.method, parcelas: o.installments || 1,
+        vendedor_email: s ? s.email : '', oferta: of ? of.code : '', afiliado: o.aff_code || '', cupom: o.coupon || '',
+        utm_source: o.utm_source || '', utm_campaign: o.utm_campaign || '', utm_content: o.utm_content || '',
+        bump: o.bump_title || '', pos_compra: !!o.parent_order_id
+      });
+    }
+    function crmSend(evento, data) {
+      if (!crmOn()) return;
+      safe(function () {
+        var row = T('CrmOutbox').insert({ ts: now(), event: evento, payload: JSON.stringify(Object.assign({ plataforma: 'BRASA', evento: evento, marca: cfg().brand_name, em: now() }, data)), tries: 0, last_error: '', sent_at: 0 });
+        crmFlush([row]);
+      }, 'crm-out');
+    }
+    function crmFlush(rows) {
+      var url = env.secret('CRM_WEBHOOK_URL'), sent = 0, failed = 0;
+      if (!url || !env.crm) return { sent: 0, failed: 0 };
+      rows = rows || T('CrmOutbox').where(function (r) { return !r.sent_at && (r.tries || 0) < 6; }).slice(0, 40);
+      rows.forEach(function (r) {
+        try {
+          var res = env.crm(url, J(r.payload, {}));
+          if (!res || res.code < 200 || res.code >= 300) throw new Error('HTTP ' + (res ? res.code : '?') + ' ' + String((res && res.text) || '').slice(0, 160));
+          T('CrmOutbox').update(r.id, { sent_at: now(), tries: (r.tries || 0) + 1, last_error: '' }); sent++;
+        } catch (e) {
+          T('CrmOutbox').update(r.id, { tries: (r.tries || 0) + 1, last_error: String((e && e.message) || e).slice(0, 300) }); failed++;
+        }
+      });
+      return { sent: sent, failed: failed };
+    }
+    function crmCleanup() {
+      var limit = now() - 30 * DAY;
+      T('CrmOutbox').where(function (r) { return (r.sent_at && r.sent_at < limit) || (!r.sent_at && r.tries >= 6 && r.ts < limit); }).forEach(function (r) { T('CrmOutbox').remove(r.id); });
+    }
+    function bridgeAuth(req) {
+      var k = env.secret('CRM_BRIDGE_KEY'), got = String(req.key || '');
+      var same = !!k && got.length === k.length;
+      for (var i = 0; same && i < k.length; i++) if (k.charCodeAt(i) !== got.charCodeAt(i)) same = false;
+      need(same, 'Chave da ponte com o CRM inválida. Confira a chave em Configurações > CRM, na BRASA.', 'FORBIDDEN');
+    }
+    A.bridgeCourses = function (req) {
+      bridgeAuth(req);
+      var I = idx(), conf = cfg();
+      return {
+        brand: conf.brand_name, site: siteUrl(), default_max_discount: conf.seller_default_max_discount,
+        courses: I.courses.filter(function (c) { return c.status === 'published' && c.price > 0; }).sort(byOrder)
+          .map(function (c) { return { slug: c.slug, title: c.title, price: c.price, anchor_price: c.anchor_price, category: c.category }; })
+      };
+    };
+    A.bridgeOffer = function (req) {
+      bridgeAuth(req);
+      var I = idx(), conf = cfg(), c = I.bySlug[trim(req.course)] || I.byId[trim(req.course)];
+      need(c && c.status === 'published' && c.price > 0, 'Curso não encontrado ou ainda não publicado na BRASA.');
+      var em = normEmail(req.seller_email);
+      need(validEmail(em), 'O e-mail do vendedor no CRM é inválido.');
+      var s = findUserByEmail(em);
+      if (!s) s = T('Users').insert({ name: trim(req.seller_name).slice(0, 120) || em.split('@')[0], email: em, phone: digits(req.seller_phone), roles: 'seller', status: 'active', salt: rand(16), xp: 0, seller_commission: conf.seller_default_commission, seller_max_discount: conf.seller_default_max_discount });
+      else if (!hasRole(s, 'seller')) s = T('Users').update(s.id, { roles: withRole(s, 'seller'), seller_commission: s.seller_commission || conf.seller_default_commission, seller_max_discount: s.seller_max_discount || conf.seller_default_max_discount });
+      need(s.status !== 'blocked', 'Este vendedor está desativado na BRASA (Vendedores).');
+      var price = round2(Number(String(req.price).replace(',', '.')));
+      need(price > 0, 'Informe o valor da condição.');
+      need(price <= c.price, 'A condição não pode passar do preço normal (' + money(c.price) + ').');
+      var disc = (c.price - price) / c.price * 100, maxD = req.manager ? 100 : (s.seller_max_discount || 0);
+      need(disc <= maxD + 0.01, 'O limite de desconto de ' + firstName(s.name) + ' é ' + maxD + '%: o menor valor permitido é ' + money(Math.ceil(c.price * (1 - maxD / 100) * 100) / 100) + '.');
+      var hours = clamp(req.hours || 48, 1, 720), lockTo = req.lock_email && validEmail(req.email) ? normEmail(req.email) : '';
+      var code = env.isDemo && /^[A-Z2-9]{6,12}$/.test(String(req.code || '')) ? String(req.code) : rand(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789');
+      need(!T('Offers').find(function (x) { return x.code === code; }), 'Código de condição repetido. Tente de novo.');
+      var of = T('Offers').insert({ code: code, seller_id: s.id, lead_id: '', course_id: c.id, email: lockTo, price: price, expires_at: now() + hours * 3600e3, max_uses: 1, uses: 0, order_id: '', note: ('CRM: ' + trim(req.note)).slice(0, 200) });
+      var link = offerLink(of, c);
+      if (req.email) link += (link.indexOf('?') > -1 ? '&' : '?') + 'email=' + encodeURIComponent(normEmail(req.email));
+      if (req.name) link += '&nome=' + encodeURIComponent(trim(req.name).slice(0, 80));
+      return { code: of.code, link: link, price: price, normal_price: c.price, course_title: c.title, expires_at: of.expires_at, seller_commission: s.seller_commission || 0 };
+    };
+    // ADM: status da ligação e reenvio do que ficou para trás
+    A.adminCrmStatus = function (req) {
+      auth(req, 'admin');
+      var rows = T('CrmOutbox').all(), pend = rows.filter(function (r) { return !r.sent_at; });
+      var last = rows.filter(function (r) { return r.sent_at; }).sort(function (a, b) { return b.sent_at - a.sent_at; })[0];
+      var fail = pend.filter(function (r) { return r.last_error; }).sort(function (a, b) { return b.ts - a.ts; })[0];
+      return { connected: crmOn(), bridge_key: !!env.secret('CRM_BRIDGE_KEY'), pending: pend.length, last_sent_at: last ? last.sent_at : 0, last_error: fail ? fail.last_error : '', last_event: last ? last.event : '' };
+    };
+    A.adminCrmFlush = function (req) {
+      auth(req, 'admin');
+      need(crmOn(), 'Cole o endereço de vendas do CRM antes de enviar.');
+      T('CrmOutbox').where(function (r) { return !r.sent_at && r.tries >= 6; }).forEach(function (r) { T('CrmOutbox').update(r.id, { tries: 0 }); });
+      return crmFlush();
+    };
+    A.adminCrmTest = function (req) {
+      var u = auth(req, 'admin');
+      need(crmOn(), 'Cole o endereço de vendas do CRM antes de testar.');
+      var res = env.crm(env.secret('CRM_WEBHOOK_URL'), { plataforma: 'BRASA', evento: 'teste', marca: cfg().brand_name, nome: u.name, email: u.email, telefone: u.phone, em: now() });
+      need(res && res.code >= 200 && res.code < 300, 'O CRM não aceitou o teste (' + (res ? res.code : 'sem resposta') + '). Confira o endereço: ele precisa ser o de vendas, com src=vendas.');
+      var body = J(res.text, null);
+      need(!body || body.ok !== false, 'O CRM respondeu: ' + String((body && (body.erro || body.error)) || 'erro').slice(0, 160));
+      return { ok: true };
+    };
+    A.adminCrmKey = function (req) {
+      auth(req, 'admin');
+      var k = rand(40);
+      env.setSecret('CRM_BRIDGE_KEY', k);
+      return { key: k };
+    };
+
     function syncLeads() {
       var conf = cfg(), t = now(), I = idx(), res = { created: 0, reopened: 0, won: 0 };
       var leads = T('Leads').all(), byRef = {};
       leads.forEach(function (l) { byRef[l.ref] = l; });
       var orders = T('Orders').all(), paid = {};
       orders.forEach(function (o) { if (o.status === 'approved') paid[o.email + '|' + o.course_id] = o; });
+      // os leads ficam só como registro (evita avisar o CRM duas vezes); quem trabalha o lead é o time no BRASA CRM
+      function crmLead(l, data) {
+        var c = I.byId[data.course_id], ev = CRM_EVENT[data.source];
+        if (!ev) return;
+        crmSend(ev, Object.assign(crmCourse(c), { nome: data.name, email: data.email, telefone: data.phone, valor: data.value || (c ? c.price : 0), detalhe: data.note || '', lead_ref: l.ref }));
+      }
       function upsert(ref, data, eventAt) {
         var l = byRef[ref];
         if (!l) {
-          data.ref = ref; data.status = 'new'; data.last_at = t; data.seller_id = pickSeller(leads);
+          data.ref = ref; data.status = 'new'; data.last_at = t; data.seller_id = '';
           l = T('Leads').insert(data); leads.push(l); byRef[ref] = l;
           activity(l.id, l.user_id, '', 'created', SOURCE_LABEL[data.source] || 'Lead novo');
-          if (l.seller_id) activity(l.id, l.user_id, '', 'assign', 'Distribuído automaticamente', { seller_id: l.seller_id });
+          crmLead(l, data);
           res.created++;
         } else if (l.status === 'lost' && eventAt && eventAt > l.updated_at) {
+          crmLead(l, data);
           l = T('Leads').update(l.id, { status: 'new', last_at: t, value: data.value || l.value });
           byRef[ref] = l;
           activity(l.id, l.user_id, '', 'status', 'Reaberto: tentou comprar de novo');
@@ -2682,19 +2801,6 @@ var BrasaLogic = (function () {
         T('Leads').update(l.id, { status: 'won', order_id: o.id, value: o.amount, last_at: t });
         activity(l.id, l.user_id, o.seller_id || '', 'sale', 'Comprou ' + o.course_title + ' por ' + money(o.amount), { order_id: o.id });
       });
-    }
-    function sendSellerInvite(u) {
-      var site = siteUrl(), link;
-      if (!u.pass_hash) {
-        if (!u.first_token) u = T('Users').update(u.id, { first_token: rand(32) });
-        link = site + 'comercial.html?primeiro=' + u.first_token;
-      } else link = site + 'comercial.html';
-      sendTpl('seller_invite', u.email, {
-        nome: u.name, primeiro_nome: firstName(u.name),
-        comissao_info: u.seller_commission > 0 ? '\n\nSua comissão é de **' + u.seller_commission + '%** sobre cada venda que você fechar.' : '',
-        cta_acesso: u.pass_hash ? 'Entrar na área comercial' : 'Criar senha e começar'
-      }, link, u.id);
-      return link;
     }
     function sellerPub(s) {
       return { id: s.id, name: s.name, email: s.email, phone: s.phone, status: s.status, pix_key: s.pix_key, seller_commission: s.seller_commission, seller_max_discount: s.seller_max_discount, last_seen: s.last_seen, created_at: s.created_at, has_password: !!s.pass_hash, is_seller: hasRole(s, 'seller') };
@@ -2826,22 +2932,20 @@ var BrasaLogic = (function () {
       auth(req, 'admin');
       var t = now(), mk = dayKey(t).slice(0, 7);
       var orders = T('Orders').where(function (o) { return o.status === 'approved' && o.seller_id; });
-      var comms = T('Commissions').where(function (m) { return m.kind === 'seller'; }), leads = T('Leads').all();
+      var comms = T('Commissions').where(function (m) { return m.kind === 'seller'; }), offers = T('Offers').all(), m0 = t - 30 * DAY;
       return {
         sellers: sellersAll().map(function (s) {
           var so = orders.filter(function (o) { return o.seller_id === s.id; }), sm = so.filter(function (o) { return dayKey(o.paid_at).slice(0, 7) === mk; });
-          var mc = comms.filter(function (m) { return m.aff_id === s.id; }), sl = leads.filter(function (l) { return l.seller_id === s.id; });
+          var mc = comms.filter(function (m) { return m.aff_id === s.id; }), so30 = offers.filter(function (x) { return x.seller_id === s.id && x.created_at >= m0; });
           var sum = function (st) { return round2(mc.filter(function (m) { return commStatus(m) === st; }).reduce(function (a, m) { return a + m.amount; }, 0)); };
           return Object.assign(sellerPub(s), {
-            open_leads: sl.filter(function (l) { return OPEN[l.status]; }).length,
-            overdue: sl.filter(function (l) { return OPEN[l.status] && l.next_at && l.next_at < t; }).length,
+            offers_30d: so30.length, offers_used_30d: so30.filter(function (x) { return x.order_id; }).length,
             won_month: sm.length, revenue_month: round2(sm.reduce(function (a, o) { return a + o.amount; }, 0)),
             revenue_total: round2(so.reduce(function (a, o) { return a + o.amount; }, 0)),
             pending: sum('pending'), available: sum('available'), paid: sum('paid')
           });
         }).sort(function (a, b) { return (b.status === 'active') - (a.status === 'active') || b.revenue_month - a.revenue_month; }),
-        unassigned: leads.filter(function (l) { return OPEN[l.status] && !l.seller_id; }).length,
-        defaults: { commission: cfg().seller_default_commission, max_discount: cfg().seller_default_max_discount, auto_assign: cfg().crm_auto_assign }
+        defaults: { commission: cfg().seller_default_commission, max_discount: cfg().seller_default_max_discount }
       };
     };
     A.adminSellerSave = function (req) {
@@ -2853,7 +2957,7 @@ var BrasaLogic = (function () {
         need(trim(s.name).length >= 2, 'Informe o nome do vendedor.');
         need(validEmail(email), 'Informe um e-mail válido.');
         u = findUserByEmail(email);
-        if (!u) { u = T('Users').insert({ name: trim(s.name).slice(0, 120), email: email, phone: digits(s.phone), roles: 'seller', status: 'active', salt: rand(16), first_token: rand(32), xp: 0 }); created = true; }
+        if (!u) { u = T('Users').insert({ name: trim(s.name).slice(0, 120), email: email, phone: digits(s.phone), roles: 'seller', status: 'active', salt: rand(16), xp: 0 }); created = true; }
       }
       var has = function (v) { return v != null && v !== ''; };
       var patch = {
@@ -2866,233 +2970,7 @@ var BrasaLogic = (function () {
       if (s.pix_key != null) patch.pix_key = trim(s.pix_key).slice(0, 120);
       if (s.status) patch.status = s.status === 'blocked' ? 'blocked' : 'active';
       u = T('Users').update(u.id, patch);
-      var link = isNew ? sendSellerInvite(u) : '';
-      return { seller: sellerPub(u), created: created, invite_link: env.isDemo ? link : '' };
-    };
-    A.adminSellerInvite = function (req) {
-      auth(req, 'admin');
-      var u = T('Users').get(trim(req.id));
-      need(u && hasRole(u, 'seller'), 'Vendedor não encontrado.', 'NOT_FOUND');
-      var link = sendSellerInvite(u);
-      return { sent: true, invite_link: env.isDemo ? link : '' };
-    };
-
-    /* ----- ações: área comercial (vendedor ou ADM) ----- */
-    A.crmMe = function (req) {
-      var u = authCrm(req), isAdm = hasRole(u, 'admin');
-      return {
-        me: { id: u.id, name: u.name, email: u.email, phone: u.phone, pix_key: u.pix_key, is_admin: isAdm, is_seller: hasRole(u, 'seller'), commission: u.seller_commission || 0, max_discount: isAdm ? 100 : (u.seller_max_discount || 0) },
-        sources: SOURCE_LABEL, statuses: STATUS_LABEL, lost_reasons: LOST_REASONS,
-        courses: idx().courses.filter(function (c) { return c.status === 'published'; }).sort(byOrder).map(function (c) { return { id: c.id, title: c.title, slug: c.slug, price: c.price, anchor_price: c.anchor_price, banner: c.banner, poster: c.poster, color: c.color === '' ? '' : Number(c.color), show_title: c.show_title }; }),
-        sellers: isAdm ? sellersAll().filter(isSeller).map(function (s) { return { id: s.id, name: s.name }; }) : [],
-        templates: waTemplates('lead')
-      };
-    };
-    A.crmBoard = function (req) {
-      var u = authCrm(req), I = idx(), isAdm = hasRole(u, 'admin'), pm = peopleMap(), t = now();
-      var scope = trim(req.scope) || (isAdm ? 'all' : 'mine'), q = trim(req.q).toLowerCase(), closedDays = clamp(req.closed_days || 30, 1, 365);
-      var all = T('Leads').all();
-      var list = all.filter(function (l) {
-        if (scope === 'queue') { if (l.seller_id) return false; }
-        else if (!isAdm || scope === 'mine') { if (l.seller_id !== u.id) return false; }
-        if (isAdm && req.seller_id && l.seller_id !== req.seller_id) return false;
-        if (!OPEN[l.status] && t - l.updated_at > closedDays * DAY) return false;
-        if (req.source && l.source !== req.source) return false;
-        if (req.course_id && l.course_id !== req.course_id) return false;
-        if (req.overdue && !(OPEN[l.status] && l.next_at && l.next_at < t)) return false;
-        if (q && (l.name + ' ' + l.email + ' ' + l.phone).toLowerCase().indexOf(q) < 0) return false;
-        return true;
-      }).map(function (l) { return leadPub(l, I, pm); });
-      list.sort(function (a, b) { return (b.overdue - a.overdue) || ((a.next_at || 9e15) - (b.next_at || 9e15)) || (b.created_at - a.created_at); });
-      var mine = all.filter(function (l) { return l.seller_id === u.id && OPEN[l.status]; });
-      return {
-        leads: list.slice(0, 800),
-        counts: {
-          queue: all.filter(function (l) { return OPEN[l.status] && !l.seller_id; }).length,
-          mine: mine.length,
-          overdue: mine.filter(function (l) { return l.next_at && l.next_at < t; }).length,
-          today: mine.filter(function (l) { return l.next_at && dayKey(l.next_at) === dayKey(t); }).length
-        }
-      };
-    };
-    A.crmLead = function (req) {
-      var u = authCrm(req), I = idx(), l = T('Leads').get(trim(req.id)), pm = peopleMap();
-      need(l && canSee(u, l), 'Lead não encontrado.', 'NOT_FOUND');
-      var pu = l.user_id ? T('Users').get(l.user_id) : (l.email ? findUserByEmail(l.email) : null), person = null;
-      if (pu) {
-        var ens = enrollMap(pu.id), rows = progressRows(pu.id);
-        person = {
-          id: pu.id, name: pu.name, email: pu.email, phone: pu.phone, last_seen: pu.last_seen, created_at: pu.created_at, has_password: !!pu.pass_hash, level: levelOf(pu.xp || 0),
-          courses: Object.keys(ens).map(function (id) { var c = I.byId[id]; if (!c) return null; var p = courseProgress(c, I, rows); return { id: id, title: c.title, pct: p.pct, source: ens[id].source, next_label: p.next_label }; }).filter(Boolean)
-        };
-      }
-      var orders = l.email ? T('Orders').where(function (o) { return o.email === l.email; }).sort(function (a, b) { return b.created_at - a.created_at; }).slice(0, 15)
-        .map(function (o) { return { id: o.id, created_at: o.created_at, paid_at: o.paid_at, course_title: o.course_title, amount: o.amount, method: o.method, status: o.status }; }) : [];
-      var acts = T('Activities').where(function (a) { return a.lead_id === l.id || (l.user_id && a.user_id === l.user_id && !a.lead_id); }).sort(function (a, b) { return b.ts - a.ts; }).slice(0, 80)
-        .map(function (a) { return { id: a.id, ts: a.ts, type: a.type, text: a.text, by: pm[a.actor_id] ? firstName(pm[a.actor_id].name) : '', data: J(a.data, null) }; });
-      var offers = T('Offers').where(function (o) { return o.lead_id === l.id; }).sort(function (a, b) { return b.created_at - a.created_at; }).map(function (o) { return offerPub(o, I); });
-      var seller = l.seller_id ? T('Users').get(l.seller_id) : u;
-      return { lead: leadPub(l, I, pm), person: person, orders: orders, activities: acts, offers: offers, vars: ctxLead(l, seller), templates: waTemplates('lead') };
-    };
-    A.crmLeadSave = function (req) {
-      var u = authCrm(req), isAdm = hasRole(u, 'admin'), d = req.lead || {}, I = idx(), l = null, patch = {};
-      if (d.id) {
-        l = T('Leads').get(d.id);
-        need(l && canSee(u, l), 'Lead não encontrado.', 'NOT_FOUND');
-        need(isAdm || l.seller_id === u.id, 'Assuma o lead antes de editar.');
-      }
-      if (d.name != null) patch.name = trim(d.name).slice(0, 120);
-      if (d.email != null) { var e = normEmail(d.email); need(!e || validEmail(e), 'E-mail inválido.'); patch.email = e; }
-      if (d.phone != null) patch.phone = digits(d.phone).slice(0, 13);
-      if (d.course_id != null) { need(!d.course_id || I.byId[d.course_id], 'Curso não encontrado.'); patch.course_id = d.course_id; }
-      if (d.value != null && d.value !== '') patch.value = round2(Math.max(0, Number(d.value) || 0));
-      if (d.next_at != null) patch.next_at = Number(d.next_at) || 0;
-      if (d.status) {
-        need(STATUS_LABEL[d.status], 'Etapa inválida.');
-        patch.status = d.status;
-        if (d.status === 'lost') { need(trim(d.lost_reason), 'Escolha o motivo da perda.'); patch.lost_reason = trim(d.lost_reason).slice(0, 120); }
-      }
-      if (isAdm && d.seller_id != null) {
-        var ns = d.seller_id ? T('Users').get(d.seller_id) : null;
-        need(!d.seller_id || isSeller(ns) || (ns && hasRole(ns, 'admin')), 'Vendedor inválido.');
-        patch.seller_id = d.seller_id;
-      }
-      patch.last_at = now();
-      var pm;
-      if (!l) {
-        need(trim(patch.name || '').length >= 2, 'Informe o nome do lead.');
-        need(patch.email || patch.phone, 'Informe o WhatsApp ou o e-mail.');
-        var ex = patch.email ? findUserByEmail(patch.email) : null, c0 = I.byId[patch.course_id];
-        l = T('Leads').insert(Object.assign({ status: 'new', source: 'manual', ref: 'manual:' + rand(10), user_id: ex ? ex.id : '', seller_id: isAdm ? (patch.seller_id || '') : u.id, value: patch.value || (c0 ? c0.price : 0), note: trim(d.note).slice(0, 2000) }, patch));
-        activity(l.id, l.user_id, u.id, 'created', 'Lead cadastrado por ' + firstName(u.name));
-      } else {
-        var before = l;
-        l = T('Leads').update(l.id, patch);
-        pm = peopleMap();
-        if (patch.status && patch.status !== before.status) activity(l.id, l.user_id, u.id, 'status', STATUS_LABEL[before.status] + ' → ' + STATUS_LABEL[patch.status] + (patch.status === 'lost' ? ': ' + patch.lost_reason : ''));
-        if (patch.seller_id != null && patch.seller_id !== before.seller_id) activity(l.id, l.user_id, u.id, 'assign', patch.seller_id ? 'Passado para ' + firstName((pm[patch.seller_id] || {}).name || '') : 'Devolvido para a fila');
-        if (patch.next_at && patch.next_at !== before.next_at) activity(l.id, l.user_id, u.id, 'followup', 'Próximo contato marcado para ' + fmtDateTime(patch.next_at));
-      }
-      return { lead: leadPub(l, I, pm || peopleMap()) };
-    };
-    A.crmClaim = function (req) {
-      var u = authCrm(req), l = T('Leads').get(trim(req.id));
-      need(l, 'Lead não encontrado.', 'NOT_FOUND');
-      need(!l.seller_id || l.seller_id === u.id || hasRole(u, 'admin'), 'Este lead já tem responsável.');
-      l = T('Leads').update(l.id, { seller_id: u.id, last_at: now() });
-      activity(l.id, l.user_id, u.id, 'assign', firstName(u.name) + ' assumiu o lead');
-      return { lead: leadPub(l, idx(), peopleMap()) };
-    };
-    A.crmNote = function (req) {
-      var u = authCrm(req), l = T('Leads').get(trim(req.id)), text = trim(req.text);
-      need(l && canSee(u, l), 'Lead não encontrado.', 'NOT_FOUND');
-      need(text, 'Escreva a anotação.');
-      T('Leads').update(l.id, { note: text.slice(0, 2000), last_at: now() });
-      var a = activity(l.id, l.user_id, u.id, 'note', text);
-      return { activity: { id: a.id, ts: a.ts, type: 'note', text: a.text, by: firstName(u.name) } };
-    };
-    A.crmLog = function (req) {
-      var u = authCrm(req), l = T('Leads').get(trim(req.id));
-      need(l && canSee(u, l), 'Lead não encontrado.', 'NOT_FOUND');
-      activity(l.id, l.user_id, u.id, req.channel === 'email' ? 'email' : 'wa', trim(req.text).slice(0, 2000), { template: trim(req.template), title: trim(req.title) });
-      var patch = { last_at: now() };
-      if (l.status === 'new') patch.status = 'contact';
-      if (!l.seller_id && !hasRole(u, 'admin')) patch.seller_id = u.id;
-      l = T('Leads').update(l.id, patch);
-      if (patch.status) activity(l.id, l.user_id, u.id, 'status', 'Novo → Em contato');
-      return { lead: leadPub(l, idx(), peopleMap()) };
-    };
-    A.crmOffer = function (req) {
-      var u = authCrm(req), I = idx(), isAdm = hasRole(u, 'admin');
-      var l = req.lead_id ? T('Leads').get(trim(req.lead_id)) : null;
-      if (req.lead_id) need(l && canSee(u, l), 'Lead não encontrado.', 'NOT_FOUND');
-      var c = I.byId[trim(req.course_id) || (l ? l.course_id : '')];
-      need(c && c.status === 'published', 'Escolha um curso publicado.');
-      var price = round2(Number(String(req.price).replace(',', '.')));
-      need(price > 0, 'Informe o valor da condição.');
-      need(price <= c.price, 'A condição não pode passar do preço normal (' + money(c.price) + ').');
-      var disc = c.price > 0 ? (c.price - price) / c.price * 100 : 0, maxD = isAdm ? 100 : (u.seller_max_discount || 0);
-      need(disc <= maxD + 0.01, 'Seu limite de desconto é ' + maxD + '%: o menor valor permitido é ' + money(Math.ceil(c.price * (1 - maxD / 100) * 100) / 100) + '.');
-      var hours = clamp(req.hours || 48, 1, 720);
-      var of = T('Offers').insert({
-        code: rand(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), seller_id: u.id, lead_id: l ? l.id : '', course_id: c.id,
-        email: req.lock_email && l && l.email ? l.email : '', price: price, expires_at: now() + hours * 3600e3, max_uses: 1, uses: 0, order_id: '', note: trim(req.note).slice(0, 200)
-      });
-      if (l) {
-        var patch = { last_at: now() };
-        if (OPEN[l.status] && l.status !== 'negotiating') patch.status = 'negotiating';
-        if (!l.seller_id) patch.seller_id = u.id;
-        var before = l.status;
-        l = T('Leads').update(l.id, patch);
-        activity(l.id, l.user_id, u.id, 'link', 'Condição especial: ' + c.title + ' por ' + money(price) + ', válida até ' + fmtDateTime(of.expires_at), { offer_id: of.id });
-        if (patch.status) activity(l.id, l.user_id, u.id, 'status', STATUS_LABEL[before] + ' → Negociando');
-      }
-      return { offer: offerPub(of, I), vars: l ? ctxLead(l, u) : null };
-    };
-    A.crmOfferEmail = function (req) {
-      var u = authCrm(req), of = T('Offers').get(trim(req.offer_id));
-      need(of && (of.seller_id === u.id || hasRole(u, 'admin')), 'Condição não encontrada.', 'NOT_FOUND');
-      var l = of.lead_id ? T('Leads').get(of.lead_id) : null, to = (l && l.email) || of.email, c = idx().byId[of.course_id];
-      need(validEmail(to), 'Este lead não tem e-mail cadastrado.');
-      var ok = sendTpl('offer', to, { nome: l ? l.name : '', primeiro_nome: firstName(l ? l.name : ''), curso: c.title, valor: money(c.price), valor_oferta: money(of.price), validade: fmtDateTime(of.expires_at), vendedor: firstName(u.name) }, offerLink(of, c), l ? l.user_id : '');
-      if (l) activity(l.id, l.user_id, u.id, 'email', 'Condição especial enviada por e-mail', { offer_id: of.id });
-      return { sent: ok };
-    };
-    A.crmOffers = function (req) {
-      var u = authCrm(req), I = idx(), isAdm = hasRole(u, 'admin');
-      return { offers: T('Offers').where(function (o) { return isAdm ? (!req.seller_id || o.seller_id === req.seller_id) : o.seller_id === u.id; }).sort(function (a, b) { return b.created_at - a.created_at; }).slice(0, 200).map(function (o) { return offerPub(o, I); }) };
-    };
-    A.crmStats = function (req) {
-      var u = authCrm(req), isAdm = hasRole(u, 'admin'), t = now(), days = clamp(req.days || 30, 1, 365), from = t - days * DAY;
-      var target = isAdm ? trim(req.seller_id) : u.id;
-      var leads = T('Leads').where(function (l) { return !target || l.seller_id === target; });
-      var orders = T('Orders').where(function (o) { return o.status === 'approved' && o.seller_id && (!target || o.seller_id === target) && o.paid_at >= from; });
-      var comms = T('Commissions').where(function (m) { return m.kind === 'seller' && (!target || m.aff_id === target); });
-      var offers = T('Offers').where(function (o) { return (!target || o.seller_id === target) && o.created_at >= from; });
-      var won = leads.filter(function (l) { return l.status === 'won' && l.updated_at >= from; }).length;
-      var lost = leads.filter(function (l) { return l.status === 'lost' && l.updated_at >= from; }).length;
-      var sum = function (st) { return round2(comms.filter(function (m) { return commStatus(m) === st; }).reduce(function (a, m) { return a + m.amount; }, 0)); };
-      var revenue = round2(orders.reduce(function (a, o) { return a + o.amount; }, 0));
-      var series = [], map = {};
-      for (var i = days - 1; i >= 0; i--) { var key = dayKey(t - i * DAY); map[key] = { d: key, label: dayLabel(key), revenue: 0, sales: 0 }; series.push(map[key]); }
-      orders.forEach(function (o) { var s = map[dayKey(o.paid_at)]; if (s) { s.revenue = round2(s.revenue + o.amount); s.sales++; } });
-      var bySource = {};
-      leads.filter(function (l) { return OPEN[l.status]; }).forEach(function (l) { bySource[l.source] = (bySource[l.source] || 0) + 1; });
-      var team = {};
-      T('Orders').where(function (o) { return o.status === 'approved' && o.seller_id && o.paid_at >= from; }).forEach(function (o) { team[o.seller_id] = team[o.seller_id] || { sales: 0, revenue: 0 }; team[o.seller_id].sales++; team[o.seller_id].revenue = round2(team[o.seller_id].revenue + o.amount); });
-      var pm = peopleMap();
-      return {
-        days: days,
-        kpis: {
-          open: leads.filter(function (l) { return OPEN[l.status]; }).length,
-          overdue: leads.filter(function (l) { return OPEN[l.status] && l.next_at && l.next_at < t; }).length,
-          today: leads.filter(function (l) { return OPEN[l.status] && l.next_at && dayKey(l.next_at) === dayKey(t); }).length,
-          won: won, lost: lost, conv: won + lost ? Math.round(won / (won + lost) * 1000) / 10 : 0,
-          sales: orders.length, revenue: revenue, ticket: orders.length ? round2(revenue / orders.length) : 0,
-          commission_pending: sum('pending'), commission_available: sum('available'), commission_paid: sum('paid'),
-          offers_sent: offers.length, offers_used: offers.filter(function (o) { return o.order_id; }).length
-        },
-        series: series, by_source: bySource, sources: SOURCE_LABEL,
-        ranking: Object.keys(team).map(function (id) { return { id: id, name: pm[id] ? maskName(pm[id].name) : 'Vendedor', sales: team[id].sales, revenue: team[id].revenue, me: id === u.id }; }).sort(function (a, b) { return b.revenue - a.revenue; }),
-        // ADM sem vendedor escolhido: pagamentos de todo o time (com o nome de quem recebeu)
-        payouts: T('Payouts').where(function (p) { return target ? p.aff_id === target : isAdm ? !!(pm[p.aff_id] && hasRole(pm[p.aff_id], 'seller')) : p.aff_id === u.id; })
-          .sort(function (a, b) { return b.created_at - a.created_at; }).slice(0, 20)
-          .map(function (p) { return Object.assign({}, p, { name: pm[p.aff_id] ? pm[p.aff_id].name : '' }); }),
-        payouts_team: !!(isAdm && !target)
-      };
-    };
-    A.crmProfile = function (req) {
-      var u = authCrm(req), patch = {};
-      if (req.pix_key != null) patch.pix_key = trim(req.pix_key).slice(0, 120);
-      if (req.phone != null) patch.phone = digits(req.phone).slice(0, 13);
-      if (req.name != null && trim(req.name).length >= 2) patch.name = trim(req.name).slice(0, 120);
-      u = T('Users').update(u.id, patch);
-      return { me: { id: u.id, name: u.name, email: u.email, phone: u.phone, pix_key: u.pix_key } };
-    };
-    A.crmSync = function (req) {
-      authCrm(req);
-      if (env.cache) { if (env.cache.get('crmsync')) return { skipped: true }; env.cache.put('crmsync', '1', 60); }
-      return syncLeads();
+      return { seller: sellerPub(u), created: created };
     };
 
     function seedBanners() {
@@ -3144,6 +3022,7 @@ var BrasaLogic = (function () {
         } catch (e) { env.log('error', 'rotina', String(e.message || e), { order: o.id }); }
       });
       res.crm = safe(syncLeads, 'crm') || {};
+      res.crm_out = safe(function () { var r = crmFlush(); crmCleanup(); return r; }, 'crm-out') || {};
       return res;
     }
 

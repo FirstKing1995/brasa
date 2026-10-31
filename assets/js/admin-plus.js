@@ -175,15 +175,55 @@
   hooks.settingsAffBump = function (h) {
     return str(h.csw('aff_on_bump', { l: 'Comissão também sobre o order bump', hint: 'Ligado, o afiliado ganha comissão sobre o total, incluindo o bump. Desligado, só sobre o curso principal.' }));
   };
+  /* ---------- CRM: a BRASA avisa o BRASA CRM e o CRM pede condições especiais ---------- */
+  function crmStatusHTML(st) {
+    if (!st) return H`<span class="t-sm t-faint">Conferindo a ligação...</span>`;
+    if (!st.connected) return H`${chip('Desligado', 'warn', 'alert')}<span class="t-xs t-faint">Cole o endereço de vendas do CRM para a BRASA começar a avisar.</span>`;
+    return H`${st.pending ? chip(plural(st.pending, 'aviso na fila', 'avisos na fila'), st.last_error ? 'bad' : 'warn', 'clock') : chip('Ligado', 'ok', 'check')}
+      <span class="t-xs t-faint">${st.last_sent_at ? 'Último aviso entregue ' + B.fmt.rel(st.last_sent_at) + '.' : 'Nenhum aviso entregue ainda.'}${st.last_error ? ' Último erro: ' + st.last_error : ''}${st.bridge_key ? '' : ' A chave da ponte ainda não foi gerada.'}</span>`;
+  }
+  function paintCrmStatus() {
+    var host = $('#crm-status'); if (!host) return;
+    B.api('adminCrmStatus', {}).then(function (st) { if (host.isConnected) host.innerHTML = str(crmStatusHTML(st)); }).catch(function () { if (host.isConnected) host.innerHTML = ''; });
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-crm-act]'); if (!b) return;
+    var act = b.dataset.crmAct;
+    if (act === 'key') {
+      B.confirm({ title: 'Gerar a chave da ponte', text: 'A chave liga o botão "Condição especial" do CRM à BRASA. Se já existir uma chave, a antiga para de funcionar e precisa ser trocada no CRM.', ok: 'Gerar chave' }).then(function (ok) {
+        if (!ok) return;
+        A.busy(b, B.api('adminCrmKey', {})).then(function (r) {
+          B.modal({ title: 'Chave da ponte', size: 'wide',
+            body: str(H`<p class="t-sm t-muted">Copie agora: por segurança, ela não aparece de novo. No BRASA CRM, cole em <b>Integrações > Plataforma BRASA > Chave da ponte</b>, junto com o endereço da plataforma.</p>
+              <div class="input-group" style="margin-top:12px"><input class="input code" readonly value="${r.key}" aria-label="Chave da ponte"><button type="button" class="btn btn--sm addon-btn" data-copy="${r.key}">${ic('copy')}Copiar</button></div>
+              <p class="hint" style="margin-top:12px">Endereço da plataforma (API_URL): <span class="code">${(B.cfg && B.cfg.API_URL) || 'o mesmo do config.js do site'}</span></p>`),
+            actions: [{ label: 'Pronto, copiei', kind: 'primary' }] });
+          paintCrmStatus();
+        }).catch(B.fail);
+      });
+    }
+    if (act === 'test') A.busy(b, B.api('adminCrmTest', {})).then(function () { B.toast('O CRM recebeu o teste', 'ok'); paintCrmStatus(); }).catch(B.fail);
+    if (act === 'flush') A.busy(b, B.api('adminCrmFlush', {})).then(function (r) { B.toast(r.sent ? plural(r.sent, 'aviso entregue', 'avisos entregues') + (r.failed ? ', ' + r.failed + ' ainda com erro' : '') : 'Nada pendente para enviar', r.failed ? 'info' : 'ok'); paintCrmStatus(); }).catch(B.fail);
+  });
   hooks.settingsCrm = function (h) {
-    return str(h.panel('comercial', 'Comercial', 'Leads e vendedores.', H`
-      ${h.csw('crm_auto_assign', { l: 'Distribuir leads automaticamente', hint: 'Cada lead novo vai para o vendedor ativo com menos leads abertos. Desligado, ele fica na fila para você atribuir.' })}
-      ${h.cf('crm_inactive_days', { l: 'Aluno parado depois de', t: 'number', post: 'dias', attrs: 'min="0" max="365" step="1" inputmode="numeric"', hint: 'Quem tem acesso ativo e não entra nesse prazo vira lead de reativação para os vendedores. Zero desliga.' })}
+    setTimeout(paintCrmStatus, 60);
+    var crmUrl = (B.base || '') + 'crm/';
+    return str(h.panel('comercial', 'CRM', 'O comercial da casa roda no BRASA CRM: WhatsApp, funil, robôs e vendedores.', H`
+      <div class="note">${ic('info')}<span>A BRASA avisa o CRM sozinha: compra, cadastro em curso grátis, Pix gerado e vencido, cartão recusado, carrinho abandonado, reembolso, aluno parado, curso concluído e estreia para a lista de espera. O vendedor trabalha o lead lá e gera a condição especial com o link do checkout daqui. <a href="${crmUrl}" target="_blank" rel="noopener">Abrir o BRASA CRM</a>.</span></div>
+      <div class="field"><label>Situação</label><div class="set-eff" id="crm-status">${crmStatusHTML(null)}</div></div>
+      ${h.secretField('CRM_WEBHOOK_URL', 'Endereço de vendas do CRM', 'No BRASA CRM: Integrações > Plataforma BRASA > Endereço de vendas do CRM (tem src=vendas). Fica guardado no servidor e nunca volta para a tela.')}
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn--sm" data-crm-act="test">${ic('send')}Enviar teste ao CRM</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-crm-act="flush">${ic('refresh')}Reenviar o que ficou na fila</button>
+        <button type="button" class="btn btn--sm btn--ghost" data-crm-act="key">${ic('key')}Gerar chave da ponte</button>
+      </div>
+      <p class="hint">Salve as configurações antes de testar. A chave da ponte deixa o CRM criar condições especiais aqui; cada vendedor é reconhecido pelo e-mail que usa no CRM.</p>
+      ${h.cf('crm_inactive_days', { l: 'Aluno parado depois de', t: 'number', post: 'dias', attrs: 'min="0" max="365" step="1" inputmode="numeric"', hint: 'Quem tem acesso pago e não entra nesse prazo vai para o CRM como aluno parado. Zero desliga.' })}
       <div class="grid-2">
         ${h.cf('seller_default_commission', { l: 'Comissão do vendedor', t: 'number', post: '%', attrs: 'min="0" max="90" step="1" inputmode="numeric"' })}
         ${h.cf('seller_default_max_discount', { l: 'Desconto máximo', t: 'number', post: '%', attrs: 'min="0" max="100" step="1" inputmode="numeric"' })}
       </div>
-      <p class="hint">Valem para vendedores novos. Cada vendedor pode ter os seus em Comercial.</p>`));
+      <p class="hint">Valem para vendedores novos, que aparecem aqui na primeira condição especial que criam no CRM. Cada um pode ter os seus em Vendedores.</p>`));
   };
   hooks.settingsEmail = function (h) {
     return str(h.panel('email', 'E-mail', 'Por onde saem os e-mails da plataforma.', H`
@@ -346,11 +386,10 @@
   /* =====================================================================
      MENSAGENS (/mensagens): modelos de WhatsApp e de e-mail
      ===================================================================== */
-  var AUD = [['student', 'Alunos'], ['affiliate', 'Afiliados'], ['lead', 'Leads'], ['order', 'Pedidos']];
+  var AUD = [['student', 'Alunos'], ['affiliate', 'Afiliados'], ['order', 'Pedidos']];
   var AUD_HINT = {
     student: 'Para quem já comprou: acesso, lembrete de quem parou, boas-vindas.',
     affiliate: 'Para quem divulga: resultado do mês, comissão, ranking.',
-    lead: 'Usados pelos vendedores na área comercial.',
     order: 'Para o pedido: pagamento que não saiu ou compra já liberada.'
   };
   // dados de exemplo só para a prévia (os reais vêm de cada pessoa na hora do envio)
@@ -882,14 +921,13 @@
   };
 
   /* =====================================================================
-     COMERCIAL (/comercial): o time de vendas
+     VENDEDORES (/vendedores): comissão e limites do time que vende pelo BRASA CRM
      ===================================================================== */
   function selFlag(s) {
     if (s.status === 'blocked') return chip('Bloqueado', 'bad');
-    if (!s.has_password) return chip('Convite pendente', 'warn');
     return '';
   }
-  function selSeen(s) { return s.last_seen ? 'Visto ' + B.fmt.rel(s.last_seen) : (s.has_password ? 'Nunca entrou' : 'Ainda não criou a senha'); }
+  function selSeen(s) { return (s.offers_30d || 0) ? plural(s.offers_30d, 'condição', 'condições') + ' em 30 dias' : 'Sem condições em 30 dias'; }
   function selWa(s) {
     var link = A.waLink(s.phone, '');
     return link ? H`<a class="iconbtn iconbtn--sm iconbtn--wa" href="${link}" target="_blank" rel="noopener" aria-label="Chamar ${s.name} no WhatsApp" title="WhatsApp">${ic('whatsapp')}</a>` : '';
@@ -905,7 +943,8 @@
     return H`${(s.seller_commission || 0) > 0 ? H`<b class="t-num">${B.fmt.pct(s.seller_commission, 1)}</b> de comissão` : H`<b>Sem comissão</b>`}<div class="t-xs t-faint">desconto até ${B.fmt.pct(s.seller_max_discount || 0, 1)}</div>`;
   }
   function selLeads(s) {
-    return H`<b class="t-num">${int(s.open_leads || 0)}</b> <span class="t-faint">${(s.open_leads || 0) === 1 ? 'aberto' : 'abertos'}</span><div>${s.overdue ? chip(plural(s.overdue, 'atrasado', 'atrasados'), 'warn') : H`<span class="t-xs t-faint">em dia</span>`}</div>`;
+    var n = s.offers_30d || 0, u = s.offers_used_30d || 0;
+    return H`<b class="t-num">${int(n)}</b> <span class="t-faint">${n === 1 ? 'condição' : 'condições'}</span><div><span class="t-xs t-faint">${n ? plural(u, 'virou venda', 'viraram venda') + ' (' + Math.round(u / n * 100) + '%)' : 'nos últimos 30 dias'}</span></div>`;
   }
   function selMonth(s) { return H`<b class="t-num">${plural(s.won_month || 0, 'venda', 'vendas')}</b><div class="t-xs t-faint t-num">${money(s.revenue_month || 0)}</div>`; }
   function selComm(s) {
@@ -922,8 +961,7 @@
     return H`<div class="sel__acts">
       ${noPay ? '' : selPay(s)}
       <button type="button" class="iconbtn iconbtn--sm" data-act="sel-edit" data-id="${s.id}" aria-label="Editar ${s.name}" title="Editar">${ic('edit')}</button>
-      <button type="button" class="iconbtn iconbtn--sm" data-act="sel-invite" data-id="${s.id}" aria-label="Reenviar convite para ${s.name}" title="Reenviar convite">${ic('mail')}</button>
-      <a class="iconbtn iconbtn--sm" href="${B.base}comercial.html" target="_blank" rel="noopener" aria-label="Abrir o funil de vendas" title="Abrir o funil de vendas">${ic('target')}</a>
+      <a class="iconbtn iconbtn--sm" href="${B.base}crm/" target="_blank" rel="noopener" aria-label="Abrir o BRASA CRM" title="Abrir o BRASA CRM">${ic('target')}</a>
       ${selWa(s)}
     </div>`;
   }
@@ -937,8 +975,8 @@
       ${selWho(s)}
       <div class="sel-card__rules t-sm">${selRules(s)}</div>
       <div class="sel-card__grid">
-        <div><span>Leads abertos</span><b class="t-num">${int(s.open_leads || 0)}</b></div>
-        <div class="${s.overdue ? 'is-warn' : ''}"><span>Atrasados</span><b class="t-num">${int(s.overdue || 0)}</b></div>
+        <div><span>Condições (30d)</span><b class="t-num">${int(s.offers_30d || 0)}</b></div>
+        <div><span>Viraram venda</span><b class="t-num">${int(s.offers_used_30d || 0)}</b></div>
         <div><span>Vendas no mês</span><b class="t-num">${int(s.won_month || 0)}</b></div>
         <div><span>Receita no mês</span><b class="t-num">${moneyK(s.revenue_month || 0)}</b></div>
       </div>
@@ -947,12 +985,12 @@
     </article>`;
   }
 
-  pages.comercial = function (ctx) {
+  pages.vendedores = pages.comercial = function (ctx) {
     var root = A.pageEl(), data = null;
-    var SUB = 'O time de vendas: quem está vendendo, quanto cada um deixou de comissão e o que ainda falta pagar.';
-    var HEAD_ACTS = H`<a class="btn btn--ghost" href="${B.base}comercial.html" target="_blank" rel="noopener">${ic('external')}Abrir área comercial</a><button class="btn btn--primary" type="button" data-act="sel-new">${ic('plus')}Novo vendedor</button>`;
-    A.setTitle('Comercial');
-    root.innerHTML = str(H`${A.pgHead('Comercial', SUB)}${A.bandSkel(4)}${skel(260)}`);
+    var SUB = 'Quem vende pelo BRASA CRM: comissão, limite de desconto e o que falta pagar.';
+    var HEAD_ACTS = H`<a class="btn btn--ghost" href="${B.base}crm/" target="_blank" rel="noopener">${ic('external')}Abrir o BRASA CRM</a><button class="btn btn--primary" type="button" data-act="sel-new">${ic('plus')}Novo vendedor</button>`;
+    A.setTitle('Vendedores');
+    root.innerHTML = str(H`${A.pgHead('Vendedores', SUB)}${A.bandSkel(4)}${skel(260)}`);
     load();
 
     function load(silent) {
@@ -961,7 +999,7 @@
         data = r; paint();
       }).catch(function (e) {
         if (!ctx.live()) return;
-        if (silent) B.fail(e); else root.innerHTML = str(H`${A.pgHead('Comercial', SUB)}${A.errorState(e, 'retry')}`);
+        if (silent) B.fail(e); else root.innerHTML = str(H`${A.pgHead('Vendedores', SUB)}${A.errorState(e, 'retry')}`);
       });
     }
     function byId(id) { return ((data && data.sellers) || []).filter(function (s) { return s.id === id; })[0]; }
@@ -969,33 +1007,24 @@
 
     function paint() {
       var ss = data.sellers || [], dflt = data.defaults || {}, act = ss.filter(function (s) { return s.status === 'active'; }).length;
-      var overdue = sumOf(ss, 'overdue'), sales = sumOf(ss, 'won_month'), rev = sumOf(ss, 'revenue_month'), free = data.unassigned || 0;
+      var offers = sumOf(ss, 'offers_30d'), used = sumOf(ss, 'offers_used_30d'), sales = sumOf(ss, 'won_month'), rev = sumOf(ss, 'revenue_month');
       var avail = sumOf(ss, 'available');
       root.innerHTML = str(H`
-        ${A.pgHead('Comercial', SUB, HEAD_ACTS)}
-        <section class="kband" aria-label="Resumo do time comercial">
-          ${A.kpiTile('Leads sem dono', int(free), free ? 'esperando na fila' : 'fila zerada', free ? 'kpi--warn' : '')}
-          ${A.kpiTile('Follow-ups atrasados', int(overdue), overdue ? 'nos leads dos vendedores' : 'tudo em dia', overdue ? 'kpi--warn' : '')}
+        ${A.pgHead('Vendedores', SUB, HEAD_ACTS)}
+        <section class="kband" aria-label="Resumo do time de vendas">
+          ${A.kpiTile('Condições especiais', int(offers), 'criadas no CRM em 30 dias')}
+          ${A.kpiTile('Viraram venda', int(used), offers ? Math.round(used / offers * 100) + '% das condições' : 'nenhuma condição ainda')}
           ${A.kpiTile('Vendas no mês', int(sales), 'fechadas por vendedores')}
           ${A.kpiTile('Receita no mês', moneyK(rev), avail > 0 ? money(avail) + ' de comissão para pagar' : plural(act, 'vendedor ativo', 'vendedores ativos'), 'kpi--hero')}
         </section>
-        <div class="note">${ic('info')}<span><b>Como funciona.</b> Quem quase comprou (carrinho abandonado, Pix vencido, aluno que parou) vira um lead. O lead cai na fila, vai para um vendedor, que chama no WhatsApp e pode mandar um link com condição especial. A comissão dele fica <b>a liberar</b> durante a garantia e depois <b>disponível</b> para você pagar. A distribuição automática está <b>${dflt.auto_assign ? 'ligada' : 'desligada'}</b>${dflt.auto_assign ? ': cada lead novo vai para o vendedor com menos leads abertos.' : ': os leads esperam na fila até alguém assumir.'} <a href="#/config?s=comercial">Ajustar em Configurações</a>.</span></div>
+        <div class="note">${ic('info')}<span><b>Como funciona.</b> Quem quase comprou (carrinho abandonado, Pix vencido, aluno que parou) chega sozinho no <a href="${B.base}crm/" target="_blank" rel="noopener">BRASA CRM</a>. Lá o vendedor conversa no WhatsApp e gera a condição especial com o link do checkout daqui. Cada vendedor é reconhecido pelo e-mail que usa no CRM e aparece nesta lista na primeira condição que criar. A comissão fica <b>a liberar</b> durante a garantia e depois <b>disponível</b> para você pagar. <a href="#/config?s=comercial">Ligação com o CRM em Configurações</a>.</span></div>
         ${ss.length ? H`
           <div class="list-cap"><span class="t-sm t-muted">${plural(ss.length, 'vendedor', 'vendedores')} · ${act} ${act === 1 ? 'ativo' : 'ativos'}</span></div>
           <div class="sel-wide table-wrap"><table class="table sel-table">
-            <thead><tr><th>Vendedor</th><th>Regras</th><th>Leads</th><th>No mês</th><th>Comissões</th><th><span class="sr-only">Ações</span></th></tr></thead>
+            <thead><tr><th>Vendedor</th><th>Regras</th><th>Condições</th><th>No mês</th><th>Comissões</th><th><span class="sr-only">Ações</span></th></tr></thead>
             <tbody>${ss.map(selRow)}</tbody></table></div>
           <div class="sel-narrow">${ss.map(selCard)}</div>`
-        : H`<div class="panel">${A.emptyState('Nenhum vendedor ainda', 'Cadastre quem vai atender os leads. Ele recebe um convite por e-mail, cria a senha e já entra na área comercial. Você define a comissão e o maior desconto que ele pode dar.', H`<button class="btn btn--primary" type="button" data-act="sel-new">${ic('plus')}Cadastrar o primeiro vendedor</button>`, 'target')}</div>`}`);
-    }
-
-    function inviteModal(link, name, what) {
-      B.modal({
-        title: what, size: 'wide',
-        body: str(H`<p class="t-muted t-sm">Na demonstração nenhum e-mail sai de verdade. Copie o link e abra em outra aba para ver o que ${firstName(name)} receberia.</p>
-          <div class="input-group" style="margin-top:12px"><input class="input" readonly value="${link}" aria-label="Link do convite"><button type="button" class="btn btn--sm addon-btn" data-copy="${link}">${ic('copy')}Copiar</button></div>`),
-        actions: [{ label: 'Fechar' }]
-      });
+        : H`<div class="panel">${A.emptyState('Nenhum vendedor ainda', 'Os vendedores aparecem aqui sozinhos na primeira condição especial que criarem no BRASA CRM, com a comissão e o desconto padrão. Se preferir, cadastre antes com o mesmo e-mail que ele usa no CRM.', H`<button class="btn btn--primary" type="button" data-act="sel-new">${ic('plus')}Cadastrar vendedor</button>`, 'target')}</div>`}`);
     }
 
     function editor(s0) {
@@ -1006,7 +1035,7 @@
         body: str(H`<form class="stack" style="--gap:14px" novalidate>
           ${fld({ l: 'Nome', n: 'name', v: s.name, req: true, attrs: 'maxlength="120" autocomplete="off"' })}
           <div class="grid-2">
-            ${fld({ l: 'E-mail', n: 'email', t: 'email', v: s.email, req: isNew, attrs: (isNew ? '' : 'disabled ') + 'inputmode="email" autocomplete="off" spellcheck="false"', hint: isNew ? 'É o login dele. O convite com o link para criar a senha vai para este e-mail.' : 'É o login dele e não muda por aqui.' })}
+            ${fld({ l: 'E-mail', n: 'email', t: 'email', v: s.email, req: isNew, attrs: (isNew ? '' : 'disabled ') + 'inputmode="email" autocomplete="off" spellcheck="false"', hint: isNew ? 'O mesmo e-mail que ele usa para entrar no BRASA CRM. É assim que a BRASA reconhece as vendas dele.' : 'É o e-mail dele no BRASA CRM e não muda por aqui.' })}
             ${fld({ l: 'WhatsApp', n: 'phone', t: 'tel', v: s.phone ? B.fmt.phone(s.phone) : '', ph: '(11) 99999-0000', attrs: 'inputmode="tel" autocomplete="off"' })}
           </div>
           <div class="grid-2">
@@ -1014,10 +1043,10 @@
             ${fld({ l: 'Desconto máximo', n: 'seller_max_discount', t: 'number', v: s.seller_max_discount, post: '%', attrs: 'min="0" max="100" step="1" inputmode="numeric"', hint: 'O maior desconto que ele pode dar numa condição especial. Padrão da casa: ' + (dflt.max_discount == null ? 20 : dflt.max_discount) + '%.' })}
           </div>
           ${fld({ l: 'Chave Pix', n: 'pix_key', v: s.pix_key, ph: 'CPF, e-mail, celular ou chave aleatória', attrs: 'maxlength="120" autocomplete="off"', hint: 'Usada para pagar as comissões.' })}
-          ${isNew ? '' : sw({ l: 'Vendedor ativo', n: 'active', v: s.status !== 'blocked', hint: 'Desligado, ele não entra na área comercial e deixa de receber leads.' })}
+          ${isNew ? '' : sw({ l: 'Vendedor ativo', n: 'active', v: s.status !== 'blocked', hint: 'Desligado, as condições especiais que ele pedir pelo CRM são recusadas. Para tirar o acesso ao CRM, desative a conta dele lá em Equipe e acessos.' })}
         </form>`),
         actions: [{ label: 'Cancelar' }, {
-          label: isNew ? 'Cadastrar e enviar convite' : 'Salvar vendedor', kind: 'primary',
+          label: isNew ? 'Cadastrar vendedor' : 'Salvar vendedor', kind: 'primary',
           onClick: function (mm) {
             $$('.err', mm.el).forEach(function (e) { e.hidden = true; });
             var v = B.formData($('form', mm.el));
@@ -1031,9 +1060,7 @@
             if (isNew) o.email = String(v.email).trim(); else { o.id = s.id; o.status = v.active ? 'active' : 'blocked'; }
             return B.api('adminSellerSave', { seller: o }).then(function (r) {
               A.drop('sellers');
-              if (!isNew) B.toast('Vendedor salvo', 'ok');
-              else if (r.invite_link) { B.toast('Vendedor cadastrado', 'ok'); setTimeout(function () { inviteModal(r.invite_link, o.name, 'Convite do vendedor'); }, 320); }
-              else B.toast(r.created ? 'Vendedor cadastrado. O convite foi enviado por e-mail.' : 'Esse e-mail já tinha cadastro. Agora a pessoa também é vendedora e recebeu o convite.', 'ok', 5200);
+              B.toast(!isNew ? 'Vendedor salvo' : r.created ? 'Vendedor cadastrado. Crie a conta dele no BRASA CRM com o mesmo e-mail.' : 'Esse e-mail já tinha cadastro. Agora a pessoa também é vendedora.', 'ok', isNew ? 5200 : 3200);
               if (ctx.live()) return load(true);
             });
           }
@@ -1063,17 +1090,10 @@
     }
 
     S.acts = {
-      retry: function () { pages.comercial(ctx); },
+      retry: function () { pages.vendedores(ctx); },
       'sel-new': function () { editor(null); },
       'sel-edit': function (el) { var s = byId(el.dataset.id); if (s) editor(s); },
-      'sel-pay': function (el) { var s = byId(el.dataset.id); if (s) payModal(s); },
-      'sel-invite': function (el) {
-        var s = byId(el.dataset.id); if (!s) return;
-        A.busy(el, B.api('adminSellerInvite', { id: s.id })).then(function (r) {
-          if (r.invite_link) inviteModal(r.invite_link, s.name, 'Convite do vendedor');
-          else B.toast('Convite enviado para ' + s.email, 'ok', 3200);
-        }).catch(B.fail);
-      }
+      'sel-pay': function (el) { var s = byId(el.dataset.id); if (s) payModal(s); }
     };
   };
 

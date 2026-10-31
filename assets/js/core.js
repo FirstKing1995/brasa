@@ -1143,7 +1143,7 @@
       ['app', 'index.html', 'Aluno', 'Aluno', 'play'],
       ['admin', 'admin.html', 'ADM', 'ADM', 'grid'],
       ['aff', 'afiliado.html', 'Afiliado', 'Afiliado', 'users'],
-      ['sales', 'comercial.html', 'Comercial', 'Comercial', 'target'],
+      ['crm', 'crm/?demo=1', 'BRASA CRM', 'CRM', 'target'],
       ['lp', 'lp.html?c=' + encodeURIComponent(firstSlug), 'Página de vendas', 'LP', 'globe'],
       ['ck', 'checkout.html?c=' + encodeURIComponent(firstSlug), 'Checkout', 'Pagar', 'cart']
     ];
@@ -1157,6 +1157,8 @@
       B.confirm({ title: 'Restaurar demonstração', text: 'Apaga tudo o que você criou ou alterou na demo e volta aos dados de exemplo.', ok: 'Restaurar' }).then(function (ok) {
         if (!ok) return;
         w.BrasaDemo.reset();
+        // a demo do BRASA CRM e a fila entre as duas recomeçam juntas
+        ['brasa_crm_demo_v1', 'brasa_crm_ponte', 'brasa_ponte_ofertas'].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
         ['app', 'admin', 'aff', 'sales'].forEach(function (s) { B.store.del('sess:' + s); B.store.del('demo:out:' + s); });
         location.reload();
       });
