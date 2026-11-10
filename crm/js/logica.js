@@ -76,7 +76,7 @@ var PRUMO_CONFIG_PADRAO = {
   MOTIVOS_PERDA: 'Preço, Sem resposta, Comprou do concorrente, Sem orçamento agora, Não era o perfil, Outro',
   CAMPOS_PERSONALIZADOS: '[]',  // [{chave, rotulo, tipo}]
   TAGS: 'Lead quente, Cliente, Indicação, Retornar',
-  ORIGENS: 'WhatsApp, Instagram, Site, Indicação, Anúncio, Evento',
+  ORIGENS: 'BRASA, WhatsApp, Instagram, Site, Indicação, Anúncio, Evento',
   // Equipe comercial (SDR passa o lead qualificado para o closer)
   PASSAR_ETAPA: '',             // etapa do funil onde o negócio fica quando o SDR passa o lead
   LEMBRETE_REUNIAO: 'SIM',      // avisa o lead antes da reunião
@@ -2175,6 +2175,8 @@ function PrumoLogica(P) {
     var vend = b.vendedor_email ? P.tabela('Usuarios').filter(function (x) { return U.norm(x.email) === U.norm(b.vendedor_email); })[0] : null;
     var aberto = P.tabela('Negocios').filter(function (n) { return n.contato_id === c.id && n.status === 'aberto'; })[0];
     if (ev.evento === 'compra_aprovada' && vend && aberto && aberto.responsavel_id !== vend.id) P.atualizar('Negocios', aberto.id, { responsavel_id: vend.id });
+    // Pix vencido é a mesma recuperação do carrinho abandonado: aciona também essas automações
+    if (ev.evento === 'pix_expirado') gatilho('evento', c, { evento: 'carrinho_abandonado', produto: ev.produto });
     if (!BRASA_FUNIL[ev.evento] || aberto) return;
     var fs = funisCompletos(), f = (BRASA_FUNIL[ev.evento] === 2 && fs.filter(function (x) { return /jornada|aluno|p[oó]s/i.test(x.nome); })[0]) || fs[0];
     var et = f && f.etapas.filter(function (e) { return e.tipo !== 'ganho' && e.tipo !== 'perdido'; })[0];
@@ -2897,8 +2899,9 @@ function PrumoLogica(P) {
     if (!U.str(b.curso)) throw new Error('Escolha o curso.');
     var res = BR.chamar('bridgeOffer', { course: b.curso, price: b.valor, hours: U.num(b.horas) || 48, lock_email: !!b.travar && !!(c && c.email), email: c ? c.email : '', name: c ? c.nome : '',
       seller_email: u.email, seller_name: u.nome, manager: u.perfil === 'admin' || u.perfil === 'gestor', note: n ? n.titulo : (c ? c.nome : '') });
-    var ate = U.str(new Date(Number(res.expires_at)).toISOString()), vars = { curso: res.course_title, valor_oferta: FIN.brl(res.price), valor: FIN.brl(res.normal_price), link_oferta: res.link,
-      validade: FIN.data(ate.slice(0, 10)) + ' às ' + new Date(Number(res.expires_at)).toTimeString().slice(0, 5) };
+    var dt = new Date(Number(res.expires_at)), p2 = function (n) { return ('0' + n).slice(-2); };
+    var vars = { curso: res.course_title, valor_oferta: FIN.brl(res.price), valor: FIN.brl(res.normal_price), link_oferta: res.link,
+      validade: p2(dt.getDate()) + '/' + p2(dt.getMonth() + 1) + '/' + dt.getFullYear() + ' às ' + p2(dt.getHours()) + ':' + p2(dt.getMinutes()) };
     if (c) hist(c.id, n ? n.id : '', u, 'brasa', 'Condição especial: ' + res.course_title + ' por ' + vars.valor_oferta + ', válida até ' + vars.validade);
     if (n && n.status === 'aberto') {
       P.atualizar('Negocios', n.id, { valor: String(res.price), atualizado_em: P.agora() });
@@ -3249,6 +3252,7 @@ function PrumoLogica(P) {
         P.inserirVarios('Etapas', mod.etapas.map(function (e, i) { return { id: P.id('ET') + i, funil_id: f.id, nome: e[0], cor: e[1], ordem: String(i + 1), tipo: e[2] || 'aberto' }; }));
       }
       if (mod.tags) salvarCfg({ TAGS: mod.tags });
+      if (mod.campos) salvarCfg({ CAMPOS_PERSONALIZADOS: JSON.stringify(mod.campos) });
     }
     return bootstrap(u);
   };
@@ -3326,7 +3330,7 @@ function PrumoLogica(P) {
 
 /* ---------------------------------------------------- modelos prontos */
 var PRUMO_MODELOS_SEGMENTO = {
-  brasa: { funil: 'Matrícula', tags: 'Lead quente, Aluno, Afiliado, Lista de espera, Retornar', etapas: [['Lead novo', '#E2A72E'], ['Em conversa', '#DCAA68'], ['Condição enviada', '#EC7A42'], ['Pagamento pendente', '#86B7B2'], ['Matriculado', '#9AA84A', 'ganho'], ['Perdido', '#C9592F', 'perdido']] },
+  brasa: { funil: 'Matrícula', tags: 'Lead quente, Aluno, Afiliado, Lista de espera, Retornar', campos: [{ chave: 'curso', rotulo: 'Curso', tipo: 'texto' }, { chave: 'situacao', rotulo: 'Situação', tipo: 'texto' }], etapas: [['Lead novo', '#E2A72E'], ['Em conversa', '#DCAA68'], ['Condição enviada', '#EC7A42'], ['Pagamento pendente', '#86B7B2'], ['Matriculado', '#9AA84A', 'ganho'], ['Perdido', '#C9592F', 'perdido']] },
   geral: { funil: 'Vendas', tags: 'Lead quente, Cliente, Indicação, Retornar', etapas: [['Novo lead', '#3B82F6'], ['Em conversa', '#8B5CF6'], ['Proposta enviada', '#F59E0B'], ['Negociação', '#F97316'], ['Ganho', '#16A34A', 'ganho'], ['Perdido', '#DC2626', 'perdido']] },
   servicos: { funil: 'Orçamentos', tags: 'Orçamento, Urgente, Cliente, Indicação', etapas: [['Pedido de orçamento', '#3B82F6'], ['Visita / diagnóstico', '#8B5CF6'], ['Orçamento enviado', '#F59E0B'], ['Aprovação', '#F97316'], ['Fechado', '#16A34A', 'ganho'], ['Não fechou', '#DC2626', 'perdido']] },
   saude: { funil: 'Agendamentos', tags: 'Primeira consulta, Retorno, Convênio, Particular', etapas: [['Contato inicial', '#3B82F6'], ['Agendado', '#8B5CF6'], ['Confirmado', '#0EA5E9'], ['Compareceu', '#16A34A', 'ganho'], ['Faltou / desistiu', '#DC2626', 'perdido']] },

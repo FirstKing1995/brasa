@@ -89,7 +89,6 @@ var BrasaLogic = (function () {
     card_mode: 'transparent',
     card_3ds: true,
     aff_on_bump: true,
-    crm_auto_assign: true,
     crm_inactive_days: 14,
     seller_default_commission: 10,
     seller_default_max_discount: 20,
@@ -949,7 +948,10 @@ var BrasaLogic = (function () {
       if ((st === 'refunded' || st === 'chargeback') && o.status === 'approved') return reverseOrder(o, st, p);
       if (o.status === 'approved' || o.status === 'refunded' || o.status === 'chargeback') return o;
       if (o.status !== st || o.status_detail !== (p.status_detail || '')) {
-        return T('Orders').update(o.id, { status: st, status_detail: p.status_detail || '', mp_payment_id: String(p.id || o.mp_payment_id), method: methodOf(p, o.method) });
+        var was = o.status;
+        o = T('Orders').update(o.id, { status: st, status_detail: p.status_detail || '', mp_payment_id: String(p.id || o.mp_payment_id), method: methodOf(p, o.method) });
+        // recusa que chega pelo aviso do Mercado Pago (página deles ou 3DS): o CRM também fica sabendo
+        if (st === 'rejected' && was !== 'rejected') crmSend('recusado', Object.assign(crmOrder(o, idx().byId[o.course_id]), { motivo: cardMessage(p.status_detail) }));
       }
       return o;
     }
@@ -2540,16 +2542,6 @@ var BrasaLogic = (function () {
     }
     function sellersAll() { return T('Users').where(function (x) { return hasRole(x, 'seller'); }); }
     function peopleMap() { var m = {}; T('Users').all().forEach(function (u) { if (hasRole(u, 'seller') || hasRole(u, 'admin')) m[u.id] = u; }); return m; }
-    function pickSeller(leads) {
-      if (!cfg().crm_auto_assign) return '';
-      var ss = sellersAll().filter(isSeller);
-      if (!ss.length) return '';
-      var load = {};
-      ss.forEach(function (s) { load[s.id] = 0; });
-      leads.forEach(function (l) { if (OPEN[l.status] && load[l.seller_id] != null) load[l.seller_id]++; });
-      ss.sort(function (a, b) { return (load[a.id] - load[b.id]) || (a.created_at - b.created_at); });
-      return ss[0].id;
-    }
     function nextCourseFor(c, I, ens) {
       if (c.upsell_enabled && c.upsell_course_id) {
         var u1 = I.byId[c.upsell_course_id];
@@ -2587,12 +2579,21 @@ var BrasaLogic = (function () {
         bump: o.bump_title || '', pos_compra: !!o.parent_order_id
       });
     }
+    var crmQueued = false;
     function crmSend(evento, data) {
       if (!crmOn()) return;
       safe(function () {
-        var row = T('CrmOutbox').insert({ ts: now(), event: evento, payload: JSON.stringify(Object.assign({ plataforma: 'BRASA', evento: evento, marca: cfg().brand_name, em: now() }, data)), tries: 0, last_error: '', sent_at: 0 });
-        crmFlush([row]);
+        T('CrmOutbox').insert({ ts: now(), event: evento, payload: JSON.stringify(Object.assign({ plataforma: 'BRASA', evento: evento, marca: cfg().brand_name, em: now() }, data)), tries: 0, last_error: '', sent_at: 0 });
+        // dentro da trava do servidor o envio espera o fim da ação (handle/webhook):
+        // uma chamada lenta ao CRM não pode segurar outros pagamentos
+        crmQueued = true;
+        if (!(env.locked && env.locked())) crmFlushQueued();
       }, 'crm-out');
+    }
+    function crmFlushQueued() {
+      if (!crmQueued) return;
+      crmQueued = false;
+      safe(function () { crmFlush(T('CrmOutbox').where(function (r) { return !r.sent_at && !r.tries; })); }, 'crm-out');
     }
     function crmFlush(rows) {
       var url = env.secret('CRM_WEBHOOK_URL'), sent = 0, failed = 0;
@@ -2983,6 +2984,11 @@ var BrasaLogic = (function () {
        entrada
        ================================================================= */
     function handle(req) {
+      var res = handleRun(req);
+      crmFlushQueued();
+      return res;
+    }
+    function handleRun(req) {
       req = req || {};
       var name = String(req.action || ''), fn = A[name];
       if (!fn || !Object.prototype.hasOwnProperty.call(A, name)) return { ok: false, error: 'Ação desconhecida.', code: 'NOT_FOUND' };
@@ -3000,6 +3006,7 @@ var BrasaLogic = (function () {
       var o = p && p.external_reference ? T('Orders').get(String(p.external_reference)) : null;
       if (!o) { env.log('info', 'webhook', 'Pagamento sem pedido correspondente', { payment: paymentId }); return { ok: true, ignored: true }; }
       var r = applyPayment(o, p);
+      crmFlushQueued();
       return { ok: true, status: r ? r.status : o.status };
     }
 

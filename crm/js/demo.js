@@ -158,7 +158,7 @@
       NOME: 'BRASA CRM', SLOGAN: 'O comercial da BRASA', COR_PRIMARIA: '#E2A72E', COR_DESTAQUE: '#C9592F', CONFIGURADO: 'SIM', SEGMENTO: 'brasa',
       WA_PROVEDOR: 'evolution', EVOLUTION_URL: 'https://evolution.demo', EVOLUTION_APIKEY: 'demo', EVOLUTION_INSTANCIA: 'demo',
       HORARIO_INICIO: '00:00', HORARIO_FIM: '23:59', DIAS_ENVIO: '0,1,2,3,4,5,6',
-      CAMPOS_PERSONALIZADOS: JSON.stringify([{ chave: 'interesse', rotulo: 'Curso de interesse', tipo: 'texto' }, { chave: 'progresso', rotulo: 'Progresso no curso', tipo: 'texto' }]),
+      CAMPOS_PERSONALIZADOS: JSON.stringify([{ chave: 'curso', rotulo: 'Curso', tipo: 'texto' }, { chave: 'situacao', rotulo: 'Situação', tipo: 'texto' }]),
       TAGS: 'Lead quente, Aluno, Afiliado, Lista de espera, Retornar', ARQUIVO_FEITO: iso(new Date()).slice(0, 7),
       EMAIL_NOME: 'BRASA', EMAIL_RODAPE: 'BRASA - Cursos para quem quer viver de verdade',
       MP_TOKEN: 'APP_USR-demonstracao', CHAT_ATIVO: 'SIM', FIN_VERIFICADO: iso(new Date()).slice(0, 10), BRASA_URL: 'demo://brasa', BRASA_CHAVE: PONTE_CHAVE
@@ -202,7 +202,7 @@
         id: 'C' + (100 + i), nome: n, telefone: tel, email: n.split(' ')[0].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '') + i + '@exemplo.com.br',
         empresa: rnd() < 0.3 ? 'Empresa ' + n.split(' ').pop() : '', cargo: '', cidade: ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Florianópolis'][i % 5],
         origem: origens[Math.floor(rnd() * origens.length)], tags: tags.join(', '), responsavel_id: ['U1', 'U2', 'U3', ''][i % 4], status: tags.indexOf('Aluno') >= 0 ? 'cliente' : 'lead',
-        campos: JSON.stringify({ interesse: ['Tráfego Sem Romance', 'Funil Perpétuo', 'Canva Que Vende', 'Isca Que Pesca'][i % 4] }), notas: '', optout: 'NAO', bot_pausado_ate: '',
+        campos: JSON.stringify({ curso: ['Tráfego Sem Romance', 'Funil Perpétuo', 'Canva Que Vende', 'Isca Que Pesca'][i % 4] }), notas: '', optout: 'NAO', bot_pausado_ate: '',
         ultima_msg: '', ultima_msg_em: '', ultima_direcao: '', nao_lidas: '0', total_msgs: '0', criado_em: criado, atualizado_em: criado
       };
       var nMsg = i < 14 ? 2 + Math.floor(rnd() * 4) : 0;
