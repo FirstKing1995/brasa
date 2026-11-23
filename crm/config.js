@@ -5,5 +5,5 @@
  * primeira tela. Deixe vazio para mostrar a tela "Vamos ligar o seu sistema".
  */
 window.PRUMO = {
-  API_URL: ''
+  API_URL: 'https://script.google.com/macros/s/AKfycbyqPZi3RwA_4FPcpFUu5V2QXlELsUk7ev9Eoal1iFzBXhjcl1ZDcItzznWIRzRuZr5j/exec'
 };
