@@ -19,14 +19,16 @@
     C.store.set('prumo_api', qs.get('api'));
     history.replaceState(null, '', location.pathname);
   }
-  if (qs.get('demo') === '1') C.store.set('prumo_api', 'demo');
-  C.apiUrl = function () { return CFG.API_URL || C.store.get('prumo_api', ''); };
+  // ?demo=1 abre a demonstração mesmo quando o endereço do servidor real está no config.js
+  var DEMO = qs.get('demo') === '1';
+  if (DEMO && !CFG.API_URL) C.store.set('prumo_api', 'demo');
+  C.apiUrl = function () { return DEMO ? 'demo' : CFG.API_URL || C.store.get('prumo_api', ''); };
   C.ehDemo = function () { return C.apiUrl() === 'demo'; };
 
   /* -------------------------------------------------------------- estado */
   C.S = {
     token: null, user: null, perm: {}, config: {}, usuarios: [], funis: [], contatos: [], negocios: [], tarefas: [],
-    modelos: [], automacoes: [], campanhas: [], grupos: [], view: 'painel', ultimaSync: '', waStatus: null, carregado: false
+    modelos: [], automacoes: [], campanhas: [], grupos: [], agentes: [], view: 'painel', ultimaSync: '', waStatus: null, carregado: false
   };
   var S = C.S;
 
@@ -98,6 +100,7 @@
   C.etapa = function (id) { var e = null; S.funis.forEach(function (f) { f.etapas.forEach(function (x) { if (x.id === id) e = x; }); }); return e; };
   C.funil = function (id) { return S.funis.filter(function (f) { return f.id === id; })[0] || null; };
   C.pode = function (area) { return !!S.perm[area]; };
+  C.agenteDoUsuario = function (uid) { return uid ? (S.agentes || []).filter(function (a) { return a.usuario_id === uid; })[0] || null : null; };
   /** Salva um texto como resposta rápida (modelo de mensagem), pedindo título e atalho. */
   C.salvarComoModelo = function (texto, midia) {
     if (!String(texto || '').trim()) { C.toast('Escreva a mensagem antes de salvar como modelo.', 'erro'); return; }

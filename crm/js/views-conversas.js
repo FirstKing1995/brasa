@@ -71,7 +71,7 @@
       var u = C.usuario(c.responsavel_id);
       return '<button class="ib-item ' + (c.id === aberto ? 'on' : '') + (C.foraDoPrazo(c) ? ' atrasada' : '') + '" data-c="' + c.id + '">' + C.av(c.nome) + '<div class="meio"><div class="l1"><b>' + (c.canal === 'instagram' ? '<span class="canal-ig" title="Instagram">' + ic('instagram') + '</span>' : c.canal === 'site' ? '<span class="canal-ig canal-site" title="Chat do site">' + ic('conversas') + '</span>' : '') + esc(c.nome) + '</b><span class="hora">' + C.rel(c.ultima_msg_em) + '</span></div>' +
         '<div class="l2"><span>' + (c.ultima_direcao === 'out' ? ic('check2').replace('class="i ', 'class="i " style="width:14px;height:14px;color:#53BDEB" data-x="') : '') + esc(c.ultima_msg) + '</span>' + (nl ? '<span class="naolidas">' + nl + '</span>' : '') + '</div>' +
-        (u || C.tags(c.tags).length ? '<div class="l2" style="margin-top:4px">' + (u ? '<span class="chip" style="flex:none">' + esc(C.primeiroNome(u.nome)) + '</span>' : '') + C.tags(c.tags).slice(0, 2).map(function (t) { return '<span class="chip" style="flex:none">' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+        (u || C.tags(c.tags).length ? '<div class="l2" style="margin-top:4px">' + (u ? '<span class="chip' + (C.agenteDoUsuario(u.id) ? ' chip-ia' : '') + '" style="flex:none">' + (C.agenteDoUsuario(u.id) ? ic('robo') : '') + esc(C.primeiroNome(u.nome)) + '</span>' : '') + C.tags(c.tags).slice(0, 2).map(function (t) { return '<span class="chip" style="flex:none">' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
         '</div></button>';
     }).join('');
     C.$$('[data-c]', box).forEach(function (b) { b.onclick = function () { abrir(b.dataset.c); }; });
@@ -114,7 +114,7 @@
     ch.innerHTML = '<div class="chat-cab"><button class="btn fantasma ic peq" id="ch-volta" aria-label="Voltar">' + ic('esq') + '</button>' + C.av(c.nome) +
       '<div class="trunc" style="flex:1;cursor:pointer" id="ch-nome"><b class="trunc" style="display:block">' + esc(c.nome) + '</b><span class="small muted">' + (c.canal === 'instagram' ? ic('instagram') + ' @' + esc(c.ig_usuario || 'Instagram') : c.canal === 'site' ? 'Chat do site' + (c.telefone ? ' · ' + esc(C.tel(c.telefone)) : '') : esc(C.tel(c.telefone))) + '</span></div>' +
       (C.pode('passar') ? '<button class="btn peq" id="ch-passar" title="Passar para um closer">' + ic('passar') + '<span class="txt"> Passar</span></button>' : '') +
-      '<button class="btn peq" id="ch-robo"></button>' +
+      '<button class="btn peq hidden" id="ch-ia"></button><button class="btn peq" id="ch-robo"></button>' +
       '<button class="btn fantasma ic" id="ch-info" aria-label="Detalhes do contato">' + ic('info') + '</button></div>' +
       '<div id="ch-aviso"></div><div class="chat-msgs" id="ch-msgs"><div style="margin:auto"><span class="spin" style="color:var(--pri)"></span></div></div>' +
       '<div class="chat-pe"><div class="rapidas hidden" id="ch-rap"></div>' +
@@ -160,9 +160,35 @@
     b.onclick = function () {
       C.api('contato.robo', { id: c.id, pausar: !pausado }).then(function (r) { c.bot_pausado_ate = r.bot_pausado_ate; pintarCabRobo(); C.toast(r.bot_pausado_ate ? 'Robô pausado para este contato' : 'Robô reativado', 'ok'); }).catch(function (e) { C.toast(e.message, 'erro'); });
     };
+    pintarCabIA(c);
     var av = C.$('#ch-aviso');
-    if (av) av.innerHTML = (c.optout === 'SIM' ? '<div class="robo-pausado">' + ic('alerta') + ' Este contato pediu para não receber mensagens automáticas. Você ainda pode responder manualmente.</div>' : '') + avisoJanela(c);
+    if (av) av.innerHTML = avisoIA(c) + (c.optout === 'SIM' ? '<div class="robo-pausado">' + ic('alerta') + ' Este contato pediu para não receber mensagens automáticas. Você ainda pode responder manualmente.</div>' : '') + avisoJanela(c);
     var bm = C.$('#ch-modelo'); if (bm) bm.onclick = function () { enviarModelo(c); };
+  }
+
+  /* vendedoras IA: quem está atendendo e os botões de assumir/devolver */
+  function agenteAtivo(c) { var a = c.ia_agente_id && S.agentes.filter(function (x) { return x.id === c.ia_agente_id; })[0]; return a && c.ia_estado !== 'humano' ? a : null; }
+  function avisoIA(c) {
+    var a = agenteAtivo(c);
+    return a ? '<div class="robo-pausado aviso-ia">' + ic('robo') + ' <span><b>' + esc(a.nome) + '</b>, vendedora IA, está cuidando desta conversa. Se você responder por aqui, ela sai da conversa.</span></div>' : '';
+  }
+  function pintarCabIA(c) {
+    var b = C.$('#ch-ia');
+    if (!b) return;
+    var temIA = S.agentes.some(function (x) { return x.ativo === 'SIM'; });
+    var a = agenteAtivo(c);
+    b.classList.toggle('hidden', !a && !temIA);
+    b.innerHTML = ic(a ? 'usuarioMais' : 'robo') + '<span class="txt"> ' + (a ? 'Assumir' : 'Devolver para IA') + '</span>';
+    b.title = a ? 'Tirar ' + a.nome + ' da conversa e atender você mesmo' : 'Uma vendedora IA volta a responder este contato';
+    b.onclick = function () {
+      if (b.disabled) return;
+      b.disabled = true;
+      C.api(a ? 'ia.assumir' : 'ia.devolver', { id: c.id }).then(function (r) {
+          ['ia_estado', 'ia_agente_id', 'ia_acordar_em', 'responsavel_id', 'bot_pausado_ate'].forEach(function (k) { c[k] = r[k]; });
+          C.toast(a ? 'Pronto, a conversa é sua.' : 'A vendedora IA voltou para esta conversa.', 'ok');
+          b.disabled = false; pintarCabRobo(); pintarLista();
+      }).catch(function (e) { b.disabled = false; C.toast(e.message, 'erro'); });
+    };
   }
 
   /** Janela de 24h: na API oficial da Meta e no Instagram só dá para responder livremente dentro dela. */
@@ -209,9 +235,9 @@
       var d = (m.criado_em || '').slice(0, 10);
       if (d !== dia) { dia = d; h += '<div class="dia-sep">' + (d === C.hoje() ? 'Hoje' : d === C.diasAtras(1) ? 'Ontem' : C.fmtData(m.criado_em, false)) + '</div>'; }
       var robo = m.origem === 'robo' || m.origem === 'campanha';
-      var cls = 'msg ' + (m.direcao === 'out' ? 'out' : '') + (robo && m.direcao === 'out' ? ' robo' : '') + (m.status === 'erro' ? ' erro' : '');
+      var cls = 'msg ' + (m.direcao === 'out' ? 'out' : '') + (robo && m.direcao === 'out' ? ' robo' : '') + (m.origem === 'ia' ? ' ia' : '') + (m.status === 'erro' ? ' erro' : '');
       var u = m.usuario_id ? C.usuario(m.usuario_id) : null;
-      var autor = m.direcao === 'out' ? (robo ? (m.origem === 'campanha' ? 'Disparo' : 'Robô') : u ? C.primeiroNome(u.nome) : m.origem === 'celular' ? 'Celular' : '') : '';
+      var autor = m.direcao === 'out' ? (robo ? (m.origem === 'campanha' ? 'Disparo' : 'Robô') : u ? C.primeiroNome(u.nome) + (m.origem === 'ia' ? ' (IA)' : '') : m.origem === 'celular' ? 'Celular' : '') : '';
       var midia = '';
       if (m.midia_url && m.tipo === 'imagem') midia = '<img src="' + esc(m.midia_url) + '" alt="" loading="lazy">';
       else if (m.midia_url) midia = '<a href="' + esc(m.midia_url) + '" target="_blank" rel="noopener">' + ic('clipe') + ' ' + esc(m.tipo) + '</a><br>';

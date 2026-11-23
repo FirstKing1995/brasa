@@ -2629,6 +2629,33 @@ var BrasaLogic = (function () {
           .map(function (c) { return { slug: c.slug, title: c.title, price: c.price, anchor_price: c.anchor_price, category: c.category }; })
       };
     };
+    // conhecimento para as vendedoras IA do CRM: tudo o que dá para falar de cada curso, sem inventar
+    A.bridgeKnowledge = function (req) {
+      bridgeAuth(req);
+      var I = idx(), conf = cfg(), rate = Number(conf.installment_rate) || 0;
+      function parcela(price, n) { if (!(price > 0) || n < 2) return 0; return round2(rate ? price * rate / (1 - Math.pow(1 + rate, -n)) : price / n); }
+      return {
+        brand: conf.brand_name, tagline: conf.brand_tagline, site: siteUrl(),
+        support_whatsapp: conf.support_whatsapp || '', support_email: conf.support_email || '',
+        courses: I.courses.filter(function (c) { return c.status === 'published' || c.status === 'coming_soon'; }).sort(byOrder).map(function (c) {
+          var st = statsOf(c, I), n = c.max_installments || conf.max_installments, lp = J(c.lp, null) || {};
+          return {
+            slug: c.slug, title: c.title, subtitle: c.subtitle, category: c.category, level: c.level,
+            status: c.status === 'published' ? 'à venda' : 'em breve (lista de espera)',
+            price: c.price, anchor_price: c.anchor_price, installments: c.price > 0 && n > 1 ? n + 'x de ' + money(parcela(c.price, n)) : '',
+            guarantee_days: c.price > 0 ? (c.guarantee_days || 7) : 0, access: c.access_days ? c.access_days + ' dias' : 'vitalício',
+            short_desc: c.short_desc, promise: c.promise, audience: lines(c.audience), pains: lines(c.pains), benefits: lines(c.benefits),
+            bonuses: parseBonuses(c.bonuses).map(function (b) { return b.title + (b.value ? ' (vale ' + money(b.value) + ')' : ''); }),
+            seasons: (I.seasonsOf[c.id] || []).map(function (s) { return s.title + ': ' + pl((I.lessonsOf[s.id] || []).length, 'aula', 'aulas'); }),
+            totals: pl(st.seasons, 'temporada', 'temporadas') + ', ' + pl(st.lessons, 'aula', 'aulas') + ', cerca de ' + Math.max(1, Math.round(st.minutes / 60)) + 'h',
+            faq: (lp.faq && lp.faq.length ? lp.faq : J(c.faq, [])).slice(0, 8),
+            testimonials: J(c.testimonials, []).filter(function (t) { return t && t.text; }).slice(0, 3).map(function (t) { return (t.name ? t.name + ': ' : '') + t.text; }),
+            link_page: siteUrl() + 'lp.html?c=' + encodeURIComponent(c.slug), link_checkout: c.status === 'published' && c.price > 0 ? siteUrl() + 'checkout.html?c=' + encodeURIComponent(c.slug) : '',
+            link_app: siteUrl() + 'index.html#/curso/' + encodeURIComponent(c.slug)
+          };
+        })
+      };
+    };
     A.bridgeOffer = function (req) {
       bridgeAuth(req);
       var I = idx(), conf = cfg(), c = I.bySlug[trim(req.course)] || I.byId[trim(req.course)];

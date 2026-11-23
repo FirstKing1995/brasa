@@ -12,6 +12,7 @@
     { id: 'conversas', rot: 'Conversas', ic: 'conversas', cont: function () { return S.contatos.filter(function (c) { return C.num(c.nao_lidas) > 0; }).length; } },
     { id: 'contatos', rot: 'Contatos', ic: 'contatos' },
     { id: 'negocios', rot: 'Negócios', ic: 'negocios' },
+    { id: 'vendedoras', rot: 'Vendedoras IA', ic: 'robo', perm: 'ajustes' },
     { id: 'tarefas', rot: 'Tarefas', ic: 'tarefas', cont: function () { var h = C.isoLocal(); return S.tarefas.filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em <= h && (!t.responsavel_id || t.responsavel_id === S.user.id); }).length; } },
     { sec: 'Marketing', perm: 'automacoes' },
     { id: 'automacoes', rot: 'Automações', ic: 'automacoes', perm: 'automacoes' },
@@ -101,7 +102,7 @@
     S.user = d.usuario; S.perm = d.permissoes || {}; S.config = d.config || {}; S.areas = d.areas || {}; S.suporte = d.suporte || {};
     S.usuarios = d.usuarios || []; S.funis = d.funis || []; S.contatos = d.contatos || []; S.negocios = d.negocios || [];
     S.tarefas = d.tarefas || []; S.modelos = d.modelos || []; S.automacoes = d.automacoes || []; S.campanhas = d.campanhas || []; S.emails = d.emails || [];
-    S.grupos = d.grupos || []; S.ultimaSync = d.agora; S.carregado = true;
+    S.grupos = d.grupos || []; S.agentes = d.agentes || []; S.ultimaSync = d.agora; S.carregado = true;
     C.aplicarMarca(S.config.marca);
   };
   C.recarregar = function () {

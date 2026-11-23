@@ -19,6 +19,13 @@
   function brasaPonte(body) {
     if (body.key !== PONTE_CHAVE) return { ok: false, error: 'Chave da ponte com o CRM inválida.' };
     if (body.action === 'bridgeCourses') return { ok: true, data: { brand: 'BRASA', courses: brasaCursos() } };
+    if (body.action === 'bridgeKnowledge') {
+      var base = new URL('../', location.href).href;
+      return { ok: true, data: { brand: 'BRASA', tagline: 'Cursos para quem quer viver de verdade', site: base, support_email: 'suporte@brasa.demo',
+        courses: brasaCursos().map(function (c) { return { slug: c.slug, title: c.title, category: c.category, status: 'à venda', price: c.price, anchor_price: c.anchor_price,
+          installments: '12x de ' + (c.price / 12 * 1.12).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), guarantee_days: 7, promise: 'Do zero ao resultado, com aulas curtas e práticas',
+          link_page: base + 'lp.html?c=' + c.slug, link_checkout: base + 'checkout.html?c=' + c.slug, faq: [{ q: 'Tem certificado?', a: 'Sim, ao concluir.' }, { q: 'Por quanto tempo tenho acesso?', a: '12 meses.' }] }; }) } };
+    }
     if (body.action === 'bridgeOffer') {
       var c = brasaCursos().filter(function (x) { return x.slug === body.course; })[0];
       if (!c) return { ok: false, error: 'Curso não encontrado ou ainda não publicado na BRASA.' };
@@ -41,6 +48,39 @@
     return q.length;
   }
   var db = null;
+  /* Claude simulado: responde por regras simples, no formato da API de verdade (tool_use, end_turn, usage). */
+  var iaEnviando = false;
+  function claudeDemo(req) {
+    var msgs = req.messages || [], ult = msgs[msgs.length - 1] || {}, sys = (req.system || []).map(function (b) { return b.text; }).join('\n');
+    var nome = (sys.match(/^Você é ([^,]+),/) || [])[1] || 'Luna';
+    var cursos = []; sys.replace(/^- ([\w-]+) \| ([^|]+) \|[^|]*\| à venda \| R\$ ([\d.,]+)/gm, function (m, slug, t, p) { cursos.push({ slug: slug, titulo: t.trim(), preco: Number(p.replace(/\./g, '').replace(',', '.')) }); });
+    var cli = ((sys.match(/Cliente: ([^,.]+)/) || [])[1] || '').split(' ')[0];
+    if (/nome ainda/.test(cli)) cli = '';
+    var resp = function (content, stop) { return { id: 'msg_demo', type: 'message', role: 'assistant', model: req.model, stop_reason: stop || 'end_turn', content: content, usage: { input_tokens: 400 + Math.floor(Math.random() * 300), output_tokens: 60 + Math.floor(Math.random() * 80), cache_read_input_tokens: 5200, cache_creation_input_tokens: 0 } }; };
+    var tx = function (t) { return resp([{ type: 'text', text: t }]); };
+    var ferr = function (n, inp) { return resp([{ type: 'tool_use', id: 'tu_' + Date.now() + Math.random().toString(36).slice(2, 6), name: n, input: inp }], 'tool_use'); };
+    var c0 = cursos[0] || { slug: 'curso', titulo: 'o curso', preco: 497 };
+    if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') {
+      var r = {}; try { r = JSON.parse(ult.content[0].content); } catch (e) {}
+      if (r.erro) return tx('Deixa eu confirmar isso com a equipe e já te falo.');
+      if (r.quem) return tx('Entendi. Já chamei ' + (r.quem === 'alguém' ? 'alguém' : 'a ' + r.quem) + ' da equipe, a conversa continua com ela por aqui.');
+      if (r.preco_especial) return tx('Consegui uma condição pra você: ' + r.preco_especial + ' (de ' + r.preco_normal + '), válida até ' + r.validade + '.\n\nÉ só garantir por aqui: ' + r.link);
+      if (r.link) return tx('Perfeito! Sai por ' + r.preco + (r.parcelamento ? ' ou ' + r.parcelamento : '') + ', com ' + (r.garantia_dias || 7) + ' dias de garantia.\n\nGaranta por aqui: ' + r.link);
+      if (r.slug) return tx('O ' + r.title + ' tem aulas curtas e práticas, acesso por 12 meses e certificado.\n\nQuer que eu te mande o link?');
+      return tx('Anotado!');
+    }
+    var t = String(Array.isArray(ult.content) ? ult.content.map(function (b) { return b.text || ''; }).join(' ') : ult.content || '').toLowerCase();
+    var jaOfereceu = msgs.some(function (m) { return Array.isArray(m.content) && m.content.some(function (b) { return b.type === 'tool_use' && b.input && b.input.valor_especial; }); });
+    if (/nota do sistema/.test(t)) return tx('Oi' + (cli ? ', ' + cli : '') + '! Passando pra saber se ficou alguma dúvida sobre o ' + c0.titulo + '.');
+    if (/reembolso|cancelar|reclama|absurdo|procon/.test(t)) return ferr('passar_para_humano', { motivo: 'Pedido de reembolso ou reclamação', resumo: 'Cliente escreveu: ' + t.slice(0, 160), urgente: true });
+    if (/rob[oô]|\bia\b|intelig[eê]ncia|humano|pessoa de verdade/.test(t)) return tx('Sou a ' + nome + ', assistente virtual da equipe BRASA.\n\nSe preferir falar com alguém da equipe, é só me dizer que eu chamo agora.');
+    if (/caro|desconto|sem grana|apertad|mais barato/.test(t) && !jaOfereceu) return ferr('link_de_compra', { curso: c0.slug, valor_especial: Math.ceil(c0.preco * 0.9), horas_validade: 24 });
+    if (/link|quero|comprar|fechar|garantir|bora|pode mandar|pode sim/.test(t)) return ferr('link_de_compra', { curso: c0.slug });
+    if (/parcel|garantia|certificado|acesso|como funciona/.test(t)) return ferr('detalhes_do_curso', { curso: c0.slug });
+    if (/depois|vou ver|pensar|retorno/.test(t)) return resp([{ type: 'tool_use', id: 'tu_r' + Date.now(), name: 'agendar_retorno', input: { horas: 6, motivo: 'ver se decidiu sobre o ' + c0.titulo } }], 'tool_use');
+    if (/obrigad|valeu|^ok$|beleza/.test(t)) return tx('Imagina' + (cli ? ', ' + cli : '') + '! Qualquer coisa é só chamar.');
+    return tx('Oi' + (cli ? ', ' + cli : '') + '! Aqui é a ' + nome + ', da BRASA.\n\nMe conta: o que você quer destravar agora? Assim eu te indico o caminho certo, tipo o ' + c0.titulo + '.');
+  }
 
   function carregar() {
     try { db = JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch (e) { db = null; }
@@ -97,6 +137,7 @@
     },
     // WhatsApp simulado: toda URL "responde" como uma Evolution API conectada.
     http: function (url, o) {
+      if (/api\.anthropic\.com/.test(url)) { var rq = {}; try { rq = JSON.parse(o.body || '{}'); } catch (e) { /* nada */ } return { code: 200, text: JSON.stringify(claudeDemo(rq)) }; }
       if (/^demo:\/\/brasa/.test(url)) { var bb = {}; try { bb = JSON.parse(o.body || '{}'); } catch (e) { /* nada */ } return { code: 200, text: JSON.stringify(brasaPonte(bb)) }; }
       if (/connectionState/.test(url)) return { code: 200, text: JSON.stringify({ instance: { state: 'open' } }) };
       if (/fetchAllGroups/.test(url)) return { code: 200, text: JSON.stringify([{ id: '120363000000001@g.us', subject: 'Comunidade BRASA', size: 187 }, { id: '120363000000002@g.us', subject: 'Alunos Tráfego Sem Romance', size: 214 }]) };
@@ -106,7 +147,7 @@
       if (/mercadopago\.com\/users\/me/.test(url)) return { code: 200, text: '{"nickname":"BRASA"}' };
       if (/\/message\//.test(url)) {
         var corpo = {}; try { corpo = JSON.parse(o.body || '{}'); } catch (e) { /* nada */ }
-        if (corpo.number && !/@g\.us$/.test(corpo.number)) agendarResposta(corpo.number, corpo.text || corpo.caption || '');
+        if (corpo.number && !/@g\.us$/.test(corpo.number) && !iaEnviando) agendarResposta(corpo.number, corpo.text || corpo.caption || '');
         return { code: 200, text: JSON.stringify({ key: { id: 'DEMO' + Date.now() + Math.random().toString(36).slice(2, 6) }, status: 'PENDING' }) };
       }
       return { code: 200, text: '{}' };
@@ -149,7 +190,7 @@
     respostasPendentes = respostasPendentes.filter(function (r) { return r.em > agora; });
     prontas.forEach(function (r) { try { L.receber(r.m); } catch (e) { console.warn(e); } });
   }, 1500);
-  setInterval(function () { if (L) try { L.trabalhar(4); } catch (e) { console.warn(e); } }, 8000);
+  setInterval(function () { if (L) try { L.trabalhar(4); } catch (e) { console.warn(e); } if (L) { iaEnviando = true; try { L.trabalharIA(null, 3); } catch (e2) { console.warn(e2); } iaEnviando = false; } }, 8000);
 
   /* ------------------------------------------------- dados de exemplo */
   function semearDemo() {
@@ -312,6 +353,14 @@
     if (nome || cor.length === 6) salvar();
   })();
   L = PrumoLogica(P);
+  // vendedoras IA ligadas na demonstração (com o Claude simulado acima)
+  if (!db.cfg.IA_CHAVE) {
+    db.cfg.IA_CHAVE = 'sk-ant-demonstracao-0000'; db.cfg.IA_ATIVA = 'SIM'; db.cfg.IA_ESPERA_SEG = '6'; salvar();
+    try {
+      var sa = L.rotear({ action: 'login', email: 'admin@brasa.demo', senha: 'brasa123' });
+      if (!(db.t.Agentes || []).length) L.rotear({ action: 'ia.agente.salvar', token: sa.token, agente: { nome: 'Luna', papel: 'vendas', canais: 'whatsapp, instagram, site', cor: '#C9592F', desconto_max: 10, personalidade: 'Calorosa, segura e objetiva.' } });
+    } catch (e) { console.warn('IA demo', e.message); }
+  }
   drenarBrasa();
   setInterval(function () { try { if (drenarBrasa()) window.dispatchEvent(new Event('brasa-ponte')); } catch (e) { console.warn(e); } }, 5000);
 
