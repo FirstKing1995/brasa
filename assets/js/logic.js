@@ -2757,6 +2757,37 @@ var BrasaLogic = (function () {
         return { course: x.c.title, lesson: x.l.label + ' ' + x.l.title, text: trecho, link: siteUrl() + 'index.html#/aula/' + encodeURIComponent(x.l.id) };
       }) };
     };
+    // equipe de Produto do CRM: cria o rascunho de um curso novo (sempre como rascunho, o ADM revisa e publica)
+    A.bridgeCourseDraft = function (req) {
+      bridgeAuth(req);
+      var d = req.course || {}, conf = cfg();
+      need(trim(d.title).length >= 3, 'O curso precisa de um título.');
+      var base = slugify(d.title), slug = base, n = 1;
+      while (T('Courses').find(function (x) { return x.slug === slug; })) { n++; slug = base + '-' + n; }
+      var lst = function (v) { return (Array.isArray(v) ? v : String(v || '').split('\n')).map(trim).filter(Boolean).slice(0, 12).join('\n'); };
+      var maxOrder = T('Courses').all().reduce(function (m, x) { return Math.max(m, x.order); }, 0);
+      var c = T('Courses').insert({
+        slug: slug, status: 'draft', order: maxOrder + 1, featured: false, show_title: true, color: Math.floor(Math.random() * 6),
+        title: trim(d.title).slice(0, 120), subtitle: trim(d.subtitle).slice(0, 200), category: trim(d.category).slice(0, 60), level: trim(d.level).slice(0, 40),
+        short_desc: trim(d.short_desc).slice(0, 400), description: String(d.description || '').slice(0, 6000), promise: trim(d.promise).slice(0, 300),
+        audience: lst(d.audience), pains: lst(d.pains), benefits: lst(d.benefits),
+        price: round2(Math.max(0, Number(d.price) || 0)), anchor_price: round2(Math.max(0, Number(d.anchor_price) || 0)),
+        max_installments: conf.max_installments, methods: 'pix,card', guarantee_days: 7, access_days: 0,
+        aff_enabled: false, aff_commission: conf.aff_default_commission, aff_auto: false, aff_cookie_days: conf.aff_default_cookie_days, lp_status: '',
+        instructor_name: conf.brand_name || ''
+      });
+      var aulas = 0;
+      (Array.isArray(d.seasons) ? d.seasons : []).slice(0, 12).forEach(function (sd, si) {
+        if (!trim(sd.title)) return;
+        var sea = T('Seasons').insert({ course_id: c.id, order: si + 1, title: trim(sd.title).slice(0, 120), description: String(sd.description || '').slice(0, 2000), release_mode: 'now', release_days: 0, release_at: 0 });
+        (Array.isArray(sd.lessons) ? sd.lessons : []).slice(0, 30).forEach(function (ld, li) {
+          if (!trim(ld.title)) return;
+          T('Lessons').insert({ course_id: c.id, season_id: sea.id, order: li + 1, title: trim(ld.title).slice(0, 160), description: String(ld.description || '').slice(0, 4000), video_url: '', duration_min: clamp(ld.duration_min || 0, 0, 1000), thumb: '', materials: '[]', free_preview: false, xp: 50 });
+          aulas++;
+        });
+      });
+      return { id: c.id, slug: c.slug, title: c.title, lessons: aulas, admin_link: siteUrl() + 'admin.html#/curso/' + encodeURIComponent(c.id) };
+    };
     A.bridgeOffer = function (req) {
       bridgeAuth(req);
       var I = idx(), conf = cfg(), c = I.bySlug[trim(req.course)] || I.byId[trim(req.course)];

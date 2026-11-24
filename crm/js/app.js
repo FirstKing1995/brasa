@@ -16,6 +16,7 @@
     { id: 'tarefas', rot: 'Tarefas', ic: 'tarefas', cont: function () { var h = C.isoLocal(); return S.tarefas.filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em <= h && (!t.responsavel_id || t.responsavel_id === S.user.id); }).length; } },
     { sec: 'Marketing', perm: 'automacoes' },
     { id: 'automacoes', rot: 'Automações', ic: 'automacoes', perm: 'automacoes' },
+    { id: 'conteudo', rot: 'Conteúdo e campanhas', ic: 'calendario', perm: 'disparos' },
     { id: 'disparos', rot: 'Disparos', ic: 'disparos', perm: 'disparos' },
     { id: 'email', rot: 'E-mail marketing', ic: 'email', perm: 'disparos' },
     { id: 'grupos', rot: 'Grupos e links', ic: 'grupos', perm: 'disparos' },

@@ -13,7 +13,8 @@
     recuperacao: ['Recuperação', 'Carrinho abandonado, Pix vencido e aluno parado'],
     suporte: ['Suporte', 'Acesso, senha, pagamento, cancelamento, reembolso e reclamações'],
     consultor: ['Consultoria', 'Ajuda o aluno a aplicar o método das aulas (chat da área do aluno)'],
-    sucesso: ['Sucesso do cliente', 'Acompanha a jornada, ouve a experiência e transforma em melhorias']
+    sucesso: ['Sucesso do cliente', 'Acompanha a jornada, ouve a experiência e transforma em melhorias'],
+    social: ['Social media', 'Dá o tom das respostas aos comentários do Instagram']
   };
   var CANAIS = { whatsapp: 'WhatsApp', instagram: 'Instagram', site: 'Chat do site', aluno: 'Área do aluno' };
   var ESFORCOS = [['low', 'Rápida e econômica (recomendado)'], ['medium', 'Equilibrada'], ['high', 'Pensa mais antes de responder']];
@@ -26,6 +27,8 @@
       personalidade: 'Paciente, calma e resolutiva. Explica o passo a passo sem jargão, confirma se deu certo e nunca discute com o cliente. Em reclamação, acolhe primeiro e resolve depois.' },
     { nome: 'Clara', papel: 'sucesso', canais: 'whatsapp, aluno', cor: '#DCAA68', desconto_max: 0,
       personalidade: 'Acolhedora e curiosa. Pergunta como a pessoa está de verdade, escuta, aprofunda com "me conta mais" e agradece cada resposta. Nunca vende nem pressiona.' },
+    { nome: 'Nina', papel: 'social', canais: 'instagram', cor: '#EC7A42', desconto_max: 0,
+      personalidade: 'Simpática, rápida e bem-humorada na medida. Responde curto, chama pelo @, agradece elogio e leva dúvida de compra para o Direct.' },
     { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0,
       personalidade: 'Mentora experiente e encorajadora. Faz perguntas sobre o caso do aluno, responde com passos práticos baseados nas aulas e comemora cada avanço. Direta, sem enrolação.' }
   ];

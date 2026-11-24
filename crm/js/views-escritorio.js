@@ -6,7 +6,7 @@
   'use strict';
   var S = C.S, esc = C.esc, ic = C.ic;
   var aba = 'diretoria', filtroNota = 'abertas', dados = null;
-  var ABAS = [['diretoria', 'Diretoria', 'relatorios'], ['financeiro', 'Financeiro e notas', 'financeiro'], ['sucesso', 'Sucesso do cliente', 'relatorios'], ['juridico', 'Jurídico', 'relatorios']];
+  var ABAS = [['diretoria', 'Diretoria', 'relatorios'], ['financeiro', 'Financeiro e notas', 'financeiro'], ['sucesso', 'Sucesso do cliente', 'relatorios'], ['produto', 'Produto', 'relatorios'], ['juridico', 'Jurídico', 'relatorios']];
   var DOCS_JUR = ['Termos de uso', 'Política de privacidade (LGPD)', 'Política de reembolso e garantia', 'Contrato de afiliados', 'Contrato de prestação de serviço', 'Resposta a reclamação (Reclame Aqui / Procon)', 'Aviso de direitos autorais do conteúdo', 'Outro'];
   var dataBr = function (d) { d = String(d || ''); return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''; };
   var pct = function (v) { return v === null || v === undefined ? '—' : v + '%'; };
@@ -25,7 +25,7 @@
   function carregar() {
     return C.api('escritorio.painel', { aba: aba }).then(function (d) {
       dados = d;
-      ({ diretoria: pintarDocs, juridico: pintarDocs, financeiro: pintarFinanceiro, sucesso: pintarSucesso })[aba]();
+      ({ diretoria: pintarDocs, juridico: pintarDocs, produto: pintarDocs, financeiro: pintarFinanceiro, sucesso: pintarSucesso })[aba]();
     }).catch(function (e) { var r = C.$('#es-raiz'); if (r) r.innerHTML = '<div class="aviso">' + ic('alerta') + '<div>' + esc(e.message) + '</div></div>'; });
   }
   function kpi(i, rot, val, sub, cor) { return '<div class="card kpi"><div class="rot">' + ic(i) + rot + '</div><div class="val"' + (cor ? ' style="color:' + cor + '"' : '') + '>' + val + '</div><div class="sub">' + sub + '</div></div>'; }
@@ -33,9 +33,16 @@
 
   /* ---------------------------------------------- Diretoria e Jurídico */
   function pintarDocs() {
-    var raiz = C.$('#es-raiz'), d = dados, jur = aba === 'juridico';
+    var raiz = C.$('#es-raiz'), d = dados, jur = aba === 'juridico', prod = aba === 'produto';
     var h = d.ia ? '' : semIA();
-    if (jur) {
+    if (prod) {
+      h += '<div class="grid-2" style="align-items:start"><div class="card"><div class="card-cab"><h3>' + ic('estrela') + ' Planejar um curso novo</h3></div><div class="card-pad">' +
+        '<p class="small muted" style="margin:0 0 10px">A equipe de Produto monta promessa, público, preço e a grade de temporadas e aulas, usando o que os alunos pedem. Depois, um clique cria o curso como rascunho na BRASA.</p>' +
+        '<div class="campo"><label>Tema</label><input class="inp" id="pr-tema" placeholder="Ex.: copy para anúncios"></div><div class="campo"><label>Público (opcional)</label><input class="inp" id="pr-pub"></div><div class="campo"><label>Faixa de preço (opcional)</label><input class="inp" id="pr-preco" placeholder="Ex.: R$ 297 a R$ 497"></div>' +
+        '<button class="btn pri" id="pr-ok">' + ic('nota') + ' Pedir o plano</button></div></div>' +
+        '<div class="card"><div class="card-cab"><h3>' + ic('lista') + ' Ideias do mês</h3></div><div class="card-pad"><p class="small muted" style="margin:0 0 10px">Na primeira segunda de cada mês, a equipe de Produto lê vendas, feedbacks, melhorias e objeções e propõe ajustes nos cursos, produtos novos, bônus e as 3 prioridades do mês.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" id="pr-ideias">' + ic('atualizar') + ' Pedir agora</button><label class="check" style="margin-left:auto"><input type="checkbox" id="pr-auto"' + (d.config.PRODUTO_AUTO !== 'NAO' ? ' checked' : '') + '> Todo mês</label></div></div></div></div>';
+    } else if (jur) {
       h += '<div class="card"><div class="card-cab"><h3>' + ic('escudo') + ' Pedir um documento</h3></div><div class="card-pad">' +
         '<p class="small muted" style="margin:0 0 10px">O Jurídico escreve um rascunho com base no Código de Defesa do Consumidor, na LGPD e nos dados da BRASA, e deixa [PREENCHER] no que não souber. <b>Todo documento é rascunho: revise com um advogado antes de publicar ou assinar.</b> Reclamações com Procon, processo ou chargeback são analisadas sozinhas, com uma sugestão de resposta.</p>' +
         '<div class="grade" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><div class="campo"><label>Documento</label><select class="inp" id="jd-tipo">' + DOCS_JUR.map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></div>' +
@@ -49,11 +56,16 @@
         '<label class="check" style="margin-left:auto"><input type="checkbox" id="dr-auto"' + (d.config.DIRETORIA_ATIVA !== 'NAO' ? ' checked' : '') + '> Gerar toda segunda</label></div></div></div>';
     }
     if (d.fila.length) h += '<div class="aviso info" style="margin-top:14px">' + ic('relogio') + '<div>' + d.fila.map(function (f) { var e = C.json(f.entrada, {}); return '<div>' + esc(e.tipo_doc || (f.tipo === 'diretoria.semanal' ? 'Relatório da semana' : f.tipo === 'juridico.caso' ? 'Análise de reclamação: ' + (e.nome || '') : f.tipo)) + ': ' + (f.status === 'erro' ? '<b style="color:var(--vermelho)">erro</b> (' + esc(f.erro) + ') <a href="#" data-rep="' + f.id + '">tentar de novo</a>' : 'na fila, fica pronto em 1 ou 2 minutos') + '</div>'; }).join('') + '</div></div>';
-    h += '<h3 style="margin:22px 0 10px">' + (jur ? 'Documentos' : 'Relatórios') + '</h3>';
+    h += '<h3 style="margin:22px 0 10px">' + (jur ? 'Documentos' : prod ? 'Planos e ideias' : 'Relatórios') + '</h3>';
     h += d.documentos.length ? '<div class="lista-cards">' + d.documentos.map(function (x) {
       return '<button class="card item-card" style="text-align:left;cursor:pointer;width:100%" data-doc="' + x.id + '">' + ic(jur ? 'escudo' : 'relatorios') + '<div class="meio"><h3>' + esc(x.titulo) + '</h3><span class="small muted">' + C.fmtData(x.criado_em) + ' · ' + esc(x.conteudo.replace(/\s+/g, ' ').slice(0, 120)) + '…</span></div><span class="status ' + (x.status === 'revisado' ? 'st-on' : 'st-off') + '">' + (x.status === 'revisado' ? 'Revisado' : x.status === 'arquivado' ? 'Arquivado' : 'Rascunho') + '</span></button>';
     }).join('') + '</div>' : '<div class="card"><div class="vazio">' + ic(jur ? 'escudo' : 'relatorios') + '<h3>Nada por aqui ainda</h3></div></div>';
     raiz.innerHTML = h;
+    var bp = C.$('#pr-ok');
+    if (bp) bp.onclick = function () { C.comBotao(bp, function () { return C.api('trabalho.criar', { tipo: 'produto.curso', tema: C.$('#pr-tema').value, publico: C.$('#pr-pub').value, preco: C.$('#pr-preco').value }).then(function () { C.toast('A equipe de Produto está montando o plano.', 'ok'); return carregar(); }); }); };
+    var bi = C.$('#pr-ideias');
+    if (bi) bi.onclick = function () { C.comBotao(bi, function () { return C.api('trabalho.criar', { tipo: 'produto.ideias' }).then(function () { C.toast('Pedido enviado à equipe de Produto.', 'ok'); return carregar(); }); }); };
+    var pa = C.$('#pr-auto'); if (pa) pa.onchange = function () { C.api('config.salvar', { config: { PRODUTO_AUTO: pa.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }); };
     var b1 = C.$('#jd-ok');
     if (b1) b1.onclick = function () { C.comBotao(b1, function () { return C.api('trabalho.criar', { tipo: 'juridico.documento', tipo_doc: C.$('#jd-tipo').value, contexto: C.$('#jd-ctx').value }).then(function () { C.toast('Pedido enviado ao Jurídico. Fica pronto em 1 ou 2 minutos.', 'ok'); return carregar(); }); }); };
     var b2 = C.$('#dr-gerar');
@@ -68,9 +80,11 @@
       titulo: x.titulo, tamanho: 'xl',
       corpo: (x.time === 'juridico' ? '<div class="aviso" style="margin-bottom:10px">' + ic('alerta') + '<div>Rascunho feito por IA. Revise com um advogado antes de publicar, assinar ou enviar.</div></div>' : '') +
         '<textarea class="inp" id="dc-txt" rows="20" style="font-family:inherit;line-height:1.5">' + esc(x.conteudo) + '</textarea>',
-      pe: '<button class="btn" id="dc-copiar">' + ic('copiar') + ' Copiar</button><button class="btn" id="dc-arq">Arquivar</button><button class="btn pri" id="dc-ok">' + ic('check') + ' Salvar como revisado</button>',
+      pe: (function () { var dj = C.json(x.dados, null); return x.tipo === 'produto.curso' && dj && dj.title ? (dj.brasa ? '<a class="btn" href="' + esc(dj.brasa.admin_link) + '" target="_blank" rel="noopener">' + ic('externo') + ' Abrir o curso na BRASA</a>' : '<button class="btn" id="dc-brasa">' + ic('plus') + ' Criar rascunho na BRASA</button>') : ''; })() + '<button class="btn" id="dc-copiar">' + ic('copiar') + ' Copiar</button><button class="btn" id="dc-arq">Arquivar</button><button class="btn pri" id="dc-ok">' + ic('check') + ' Salvar como revisado</button>',
       aoAbrir: function (el) {
         el.querySelector('#dc-copiar').onclick = function () { C.copiar(el.querySelector('#dc-txt').value); };
+        var cb = el.querySelector('#dc-brasa');
+        if (cb) cb.onclick = function () { C.comBotao(cb, function () { return C.api('produto.criarNaBrasa', { id: x.id }).then(function (r) { el.fechar(); C.toast('Rascunho criado na BRASA: ' + r.title + ' (' + r.lessons + ' aulas). Revise e publique pelo ADM.', 'ok'); window.open(r.admin_link, '_blank', 'noopener'); carregar(); }); }); };
         var salvar = function (st) { return C.api('documento.salvar', { id: x.id, conteudo: el.querySelector('#dc-txt').value, status: st }).then(function () { el.fechar(); C.toast('Documento salvo', 'ok'); carregar(); }).catch(function (e) { C.toast(e.message, 'erro'); }); };
         el.querySelector('#dc-ok').onclick = function () { salvar('revisado'); };
         el.querySelector('#dc-arq').onclick = function () { salvar('arquivado'); };

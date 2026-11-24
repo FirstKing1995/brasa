@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.6.0';
+var PRUMO_VERSAO = '1.7.0';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -40,7 +40,8 @@ var PRUMO_ESQUEMA = {
   Feedbacks: ['id', 'contato_id', 'agente_id', 'curso', 'momento', 'nps', 'sentimento', 'travou', 'esperava', 'faltou', 'ajudou', 'comentario', 'depoimento', 'depoimento_ok', 'criado_em', 'atualizado_em'],
   Melhorias: ['id', 'area', 'curso', 'titulo', 'descricao', 'votos', 'origem', 'status', 'criado_em', 'atualizado_em'],
   Notas: ['id', 'contato_id', 'pedido_id', 'curso', 'valor', 'tomador_nome', 'tomador_doc', 'tomador_email', 'motivo', 'status', 'numero', 'link', 'criado_em', 'emitida_em', 'emitida_por'],
-  Documentos: ['id', 'time', 'tipo', 'titulo', 'conteudo', 'contato_id', 'status', 'criado_em', 'atualizado_em'],
+  Documentos: ['id', 'time', 'tipo', 'titulo', 'conteudo', 'contato_id', 'status', 'criado_em', 'atualizado_em', 'dados'],
+  Posts: ['id', 'tipo', 'titulo', 'legenda', 'hashtags', 'roteiro', 'arte_titulo', 'arte_texto', 'imagem_url', 'curso', 'agendar_em', 'status', 'ig_id', 'permalink', 'erro', 'criado_em', 'atualizado_em', 'publicado_em'],
   Trabalhos: ['id', 'time', 'tipo', 'entrada', 'status', 'documento_id', 'erro', 'tentativas', 'criado_em', 'feito_em'],
   Config: ['chave', 'valor']
 };
@@ -133,6 +134,8 @@ var PRUMO_CONFIG_PADRAO = {
   META_MES: '', MEI_LIMITE: '81000', DAS_PAGO: '', NF_EMITIR: 'pedido', NF_DESCRICAO: 'Curso online: {curso}',
   // Diretoria (relatório toda segunda) e Jurídico (análise automática de reclamações graves)
   DIRETORIA_ATIVA: 'SIM', DIRETORIA_ULTIMA: '', JURIDICO_AUTO: 'SIM',
+  // Marketing (calendário de posts toda segunda) e Produto (ideias todo mês); comentários do Instagram respondidos pela IA
+  MKT_ATIVO: 'SIM', MKT_POSTS_SEMANA: '5', MKT_ULTIMO: '', PRODUTO_AUTO: 'SIM', PRODUTO_ULTIMO: '', IG_COMENTARIOS: 'NAO',
   PROX_TRABALHO: ''
 };
 
@@ -716,6 +719,17 @@ function PrumoLogica(P) {
   IG.responderComentario = function (comentarioId, texto) {
     return req(IG.base() + '/' + encodeURIComponent(comentarioId) + '/replies', 'post', { message: U.cap(texto, 2000) }, IG.cab());
   };
+  /** Publica um post de foto no feed (a imagem precisa estar num endereço público). */
+  IG.publicar = function (imagemUrl, legenda) {
+    var k = cfg();
+    var cont = req(IG.base() + '/' + k.IG_ID + '/media', 'post', { image_url: imagemUrl, caption: U.cap(legenda, 2200) }, IG.cab(), 'Instagram');
+    if (!cont || !cont.id) throw new Error('O Instagram não aceitou a imagem.');
+    var pub = req(IG.base() + '/' + k.IG_ID + '/media_publish', 'post', { creation_id: cont.id }, IG.cab(), 'Instagram');
+    var link = '';
+    try { link = (req(IG.base() + '/' + pub.id + '?fields=permalink', 'get', undefined, IG.cab(), 'Instagram') || {}).permalink || ''; } catch (e) { /* segue */ }
+    return { id: pub.id, permalink: link };
+  };
+  IG.responderComentario = function (comentarioId, texto) { return req(IG.base() + '/' + comentarioId + '/replies', 'post', { message: U.cap(texto, 2000) }, IG.cab(), 'Instagram'); };
   IG.perfil = function (igsid) {
     try { var r = req(IG.base() + '/' + encodeURIComponent(igsid) + '?fields=username,name', 'get', undefined, IG.cab()); return { usuario: r.username || '', nome: r.name || '' }; }
     catch (e) { return { usuario: '', nome: '' }; }
@@ -842,6 +856,7 @@ function PrumoLogica(P) {
       hist(c.id, '', null, 'comentario', '"' + U.cap(m.comentario.texto, 200) + '"');
       P.atualizar('Contatos', c.id, { atualizado_em: P.agora() });
       if (!roboPausado(c)) gatilho('comentario', c, { texto: m.comentario.texto, comentario_id: m.comentario.id, post: m.comentario.post });
+      try { MKT.comentario(c, m.comentario); } catch (eC) { hist(c.id, '', null, 'ia_erro', 'Comentário: ' + eC.message); }
       return c;
     }
     var mud = { janela_ate: U.somaTempo(P.agora(), 1440) };
@@ -2502,7 +2517,7 @@ function PrumoLogica(P) {
     return o;
   }
 
-  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO', 'ASSIST_ULTIMO', 'DIRETORIA_ULTIMA'].indexOf(k) < 0; });
+  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO', 'ASSIST_ULTIMO', 'DIRETORIA_ULTIMA', 'MKT_ULTIMO', 'PRODUTO_ULTIMO'].indexOf(k) < 0; });
 
   function bootstrap(user) {
     var contatos = filtraContatosDoUsuario(user, P.tabela('Contatos'));
@@ -3060,9 +3075,10 @@ function PrumoLogica(P) {
     recuperacao: 'Você é da equipe de RECUPERAÇÃO: cuida de quem quase comprou (carrinho, Pix ou cartão recusado), de quem esperava um curso que estreou e de alunos parados. Entende o que travou e ajuda a concluir, sem pressão.',
     suporte: 'Você é da equipe de SUPORTE: resolve problemas de clientes e alunos (acesso, senha, pagamento, certificado, cancelamento, reembolso e reclamações) com calma, rapidez e empatia.',
     consultor: 'Você é CONSULTORA da BRASA: domina o método ensinado nos cursos e ajuda o aluno a aplicar no caso dele, de forma prática, como uma mentora.',
+    social: 'Você é a SOCIAL MEDIA da BRASA: responde comentários públicos no Instagram com simpatia e rapidez.',
     sucesso: 'Você é do SUCESSO DO CLIENTE: acompanha a jornada de quem comprou, quer saber como está a experiência e se a pessoa está tendo resultado, e transforma o que ouve em melhorias.'
   };
-  IA.NOMES_PAPEIS = { vendas: 'vendas', recuperacao: 'recuperação', suporte: 'suporte', consultor: 'consultoria', sucesso: 'sucesso do cliente' };
+  IA.NOMES_PAPEIS = { vendas: 'vendas', recuperacao: 'recuperação', suporte: 'suporte', consultor: 'consultoria', sucesso: 'sucesso do cliente', social: 'social media' };
   IA.INSTRUCOES = {
     suporte: [
       'COMO VOCÊ RESOLVE',
@@ -4096,8 +4112,9 @@ function PrumoLogica(P) {
     if (!t) return null;
     var e = U.json(t.entrada, {}) || {}, k = cfg(), modelo = IA.MODELOS[k.IA_MODELO] ? k.IA_MODELO : 'claude-opus-5-5';
     try {
-      var req, titulo, contato = '';
-      if (t.tipo === 'diretoria.semanal') {
+      var req, titulo, contato = '', ex = MKT.trabalho(t, e, modelo);
+      if (ex) { req = ex.req; titulo = ex.titulo; contato = ex.contato || ''; }
+      else if (t.tipo === 'diretoria.semanal') {
         titulo = 'Relatório da semana ' + e.de.split('-').reverse().join('/') + ' a ' + e.ate.split('-').reverse().join('/');
         req = { model: modelo, max_tokens: 6000, output_config: { effort: 'low' }, tools: IA.ASSIST_FERR.concat(TR.FERR_DIRETORIA),
           system: [{ type: 'text', text: TR.DIRETORIA, cache_control: { type: 'ephemeral', ttl: '1h' } }],
@@ -4127,8 +4144,11 @@ function PrumoLogica(P) {
       }
       if (!texto) throw new Error('A IA não devolveu texto.');
       return trava(function () {
-        var doc = { id: P.id('DC'), time: t.time, tipo: t.tipo, titulo: titulo, conteudo: U.cap(texto, 45000), contato_id: contato, status: 'rascunho', criado_em: P.agora(), atualizado_em: P.agora() };
+        if (ex && ex.semDoc) { var rs = ex.pos(texto, null); P.atualizar('Trabalhos', t.id, { status: 'feito', feito_em: P.agora(), erro: '' }); return rs; }
+        var dadosDoc = ex && ex.dados ? ex.dados(texto) : null;
+        var doc = { id: P.id('DC'), time: t.time, tipo: t.tipo, titulo: titulo, conteudo: U.cap(ex && ex.conteudo ? ex.conteudo(texto, dadosDoc) : texto, 45000), contato_id: contato, status: 'rascunho', criado_em: P.agora(), atualizado_em: P.agora(), dados: dadosDoc ? U.cap(JSON.stringify(dadosDoc), 45000) : '' };
         P.inserir('Documentos', doc);
+        if (ex && ex.pos) ex.pos(texto, doc, dadosDoc);
         P.atualizar('Trabalhos', t.id, { status: 'feito', documento_id: doc.id, feito_em: P.agora(), erro: '' });
         if (contato) hist(contato, '', null, 'juridico', 'O Jurídico preparou uma análise e uma sugestão de resposta (Escritório > Jurídico)');
         if (t.tipo === 'diretoria.semanal') {
@@ -4160,6 +4180,215 @@ function PrumoLogica(P) {
     TR.criar('juridico', 'juridico.caso', { contato_id: c.id, nome: c.nome, motivo: U.cap(motivo, 300), resumo: U.cap(resumo, 1000) });
   };
 
+  /* ======================================================= Marketing e Produto */
+  var MKT = {};
+  MKT.SISTEMA = 'Você é a equipe de marketing da BRASA, plataforma brasileira de cursos online. Escreve em português do Brasil, com a voz da marca: direta, calorosa, sem exagero e sem emojis. ' +
+    'Nunca prometa renda, resultado garantido ou ganho financeiro (regras de anúncios da Meta e do Código de Defesa do Consumidor). Não invente números, depoimentos ou dados: use só o que foi fornecido. ' +
+    'Pense em quem ainda não conhece a BRASA: gancho forte na primeira linha, uma ideia por post, chamada para ação clara.';
+  MKT.PRODUTO = 'Você é a equipe de produto da BRASA, plataforma brasileira de cursos online de um MEI. Analisa dados reais (vendas, feedbacks, melhorias pedidas, objeções, lista de espera) e propõe produtos, bônus, ofertas e ajustes nos cursos. ' +
+    'Seja concreto e priorize pelo impacto e pelo esforço. Português do Brasil, títulos simples e listas com hífen. Não invente dados.';
+  MKT.contexto = function () {
+    var b = {}; try { b = IA.base(); } catch (e) { b = {}; }
+    var cs = (b.courses || []), sp = SUC.painel(), d30 = U.somaTempo(P.agora(), -30 * 1440);
+    var vendas = {};
+    P.tabela('Negocios').filter(function (n) { return n.status === 'ganho' && n.fechado_em >= d30; }).forEach(function (n) { var k = n.titulo.split(' - ')[0]; vendas[k] = (vendas[k] || 0) + 1; });
+    var espera = {};
+    P.tabela('Historico').filter(function (h) { return h.acao === 'compra' && /Estreia|lista de espera/i.test(h.detalhe) && h.data >= U.somaTempo(P.agora(), -90 * 1440); }).forEach(function (h) { var k = U.str(h.detalhe.split(': ')[1]) || 'curso'; espera[k] = (espera[k] || 0) + 1; });
+    var objecoes = P.tabela('Contatos').filter(function (c) { return c.ia_resumo && c.atualizado_em >= d30; }).slice(-30).map(function (c) { return U.cap(c.ia_resumo, 200); });
+    return [TR.empresa(),
+      'Cursos à venda: ' + (cs.filter(function (c) { return /venda/.test(c.status); }).map(function (c) { return c.title + ' (' + brlIA(c.price) + '; ' + U.cap(c.promise || c.short_desc || '', 120) + ')'; }).join('; ') || 'nenhum ainda'),
+      'Cursos em breve: ' + (cs.filter(function (c) { return !/venda/.test(c.status); }).map(function (c) { return c.title; }).slice(0, 40).join(', ') || 'nenhum'),
+      'Vendas nos últimos 30 dias por curso: ' + (JSON.stringify(vendas) === '{}' ? 'nenhuma registrada' : JSON.stringify(vendas)),
+      'Pedidos de aviso de estreia (lista de espera, 90 dias): ' + (JSON.stringify(espera) === '{}' ? 'nenhum' : JSON.stringify(espera)),
+      'Depoimentos autorizados: ' + (sp.depoimentos.slice(0, 6).map(function (x) { return '"' + U.cap(x.texto, 200) + '" (' + x.nome + ', ' + x.curso + ')'; }).join(' | ') || 'nenhum ainda (não invente)'),
+      'NPS: ' + (sp.nps === null ? 'sem notas' : sp.nps) + '. Melhorias mais pedidas: ' + (sp.melhorias.filter(function (m) { return m.status === 'nova' || m.status === 'planejada'; }).slice(0, 8).map(function (m) { return m.titulo + ' (' + m.votos + ')'; }).join('; ') || 'nenhuma'),
+      'O que os clientes contaram nas conversas (dúvidas e objeções): ' + (objecoes.join(' | ') || 'sem registros'),
+      'Feedbacks recentes: ' + (sp.feedbacks.slice(0, 12).map(function (f) { return [f.curso, f.travou && 'travou: ' + f.travou, f.faltou && 'faltou: ' + f.faltou, f.ajudou && 'ajudou: ' + f.ajudou].filter(Boolean).join(' / '); }).join(' | ') || 'nenhum')
+    ].join('\n');
+  };
+  /** Extrai o JSON que a IA devolveu (dentro de bloco de código ou solto). */
+  MKT.json = function (texto) {
+    var m = U.str(texto).match(/```(?:json)?\s*([\s\S]*?)```/), bruto = m ? m[1] : U.str(texto);
+    var i = bruto.indexOf('{'), j = bruto.lastIndexOf('}');
+    return i >= 0 && j > i ? U.json(bruto.slice(i, j + 1), null) : null;
+  };
+  MKT.req = function (modelo, sistema, conteudo, maxTok) { return { model: modelo, max_tokens: maxTok || 6000, output_config: { effort: 'low' }, system: [{ type: 'text', text: sistema, cache_control: { type: 'ephemeral', ttl: '1h' } }], messages: [{ role: 'user', content: conteudo }] }; };
+  var TIPOS_POST = ['feed', 'carrossel', 'reels', 'stories'];
+  /** Monta o pedido de cada trabalho de Marketing/Produto/Social (ou null se não for deles). */
+  MKT.trabalho = function (t, e, modelo) {
+    var dd = function (iso) { return U.str(iso).slice(0, 10).split('-').reverse().join('/'); };
+    if (t.tipo === 'marketing.calendario') {
+      var qtd = Math.min(14, Math.max(1, U.num(e.qtd) || U.num(cfg().MKT_POSTS_SEMANA) || 5));
+      return { titulo: 'Calendário de posts: semana de ' + dd(e.de), dados: function (tx) { return MKT.json(tx); },
+        conteudo: function (tx, j) { return j && j.posts ? (j.resumo || '') + '\n\n' + j.posts.map(function (p, i) { return (i + 1) + '. [' + p.tipo + '] ' + (p.titulo || p.arte_titulo || '') + '\n' + U.str(p.legenda) + (p.roteiro ? '\nRoteiro: ' + p.roteiro : ''); }).join('\n\n') : tx; },
+        req: MKT.req(modelo, MKT.SISTEMA, MKT.contexto() + '\n\nMonte o calendário do Instagram da semana que começa em ' + e.de + ' com ' + qtd + ' posts' + (e.foco ? '. Foco pedido pelo dono: ' + e.foco : '') + '. Varie: dor do público, bastidor, prova (só depoimentos reais fornecidos), conteúdo útil, oferta de um curso à venda (ou lista de espera de um curso em breve). Ao menos metade deve ser "feed" (foto única, que sai sozinho).\n' +
+          'Responda SÓ com JSON neste formato: {"resumo":"estratégia da semana em 2 frases","posts":[{"dia":0,"hora":"19:00","tipo":"feed|carrossel|reels|stories","curso":"nome ou vazio","titulo":"nome interno curto","arte_titulo":"texto grande da arte, até 8 palavras","arte_texto":"frase de apoio da arte, até 18 palavras","legenda":"legenda completa com chamada para ação","hashtags":"#5 a #8 hashtags","roteiro":"para carrossel: texto de cada slide; para reels e stories: cenas e falas; vazio no feed"}]}. "dia" vai de 0 (primeiro dia) a 6.'),
+        pos: function (tx, doc, j) {
+          if (!j || !Array.isArray(j.posts)) return;
+          j.posts.slice(0, 14).forEach(function (p) {
+            var hora = /^\d\d:\d\d$/.test(U.str(p.hora)) ? p.hora : '19:00';
+            var dia = U.somaTempo(e.de + 'T12:00:00', Math.min(6, Math.max(0, U.num(p.dia))) * 1440).slice(0, 10);
+            MKT.criarPost({ tipo: p.tipo, titulo: p.titulo, legenda: p.legenda, hashtags: p.hashtags, roteiro: p.roteiro, arte_titulo: p.arte_titulo, arte_texto: p.arte_texto, curso: p.curso, agendar_em: dia + 'T' + hora + ':00' });
+          });
+        } };
+    }
+    if (t.tipo === 'marketing.campanha') return { titulo: 'Campanha: ' + U.cap(e.curso || e.objetivo || 'nova', 70), req: MKT.req(modelo, MKT.SISTEMA, MKT.contexto() + '\n\nPlaneje uma campanha de anúncios na Meta (Instagram e Facebook)' + (e.curso ? ' para o curso ' + e.curso : '') + '. Objetivo: ' + (e.objetivo || 'vendas') + '. Verba: ' + (e.verba || 'a definir') + '.\nInclua: público e segmentação; 3 ângulos de comunicação; 10 títulos; 5 textos principais (até 125 caracteres no início); ideias de criativo para cada ângulo (o ADM da BRASA já gera 10 anúncios em imagem por curso); estrutura da campanha e divisão da verba; métricas para acompanhar e quando pausar um anúncio; checklist antes de subir.') };
+    if (t.tipo === 'marketing.live') return { titulo: 'Roteiro de live: ' + U.cap(e.tema || 'live', 70), req: MKT.req(modelo, MKT.SISTEMA, MKT.contexto() + '\n\nPrepare uma live no Instagram sobre: ' + (e.tema || 'tema livre') + (e.data ? ', no dia ' + e.data : '') + '.\nInclua: título e promessa da live; roteiro minuto a minuto (abertura, blocos, interação, oferta no final); 8 perguntas para puxar o público; 3 posts e 5 stories de divulgação (com textos prontos); o que fazer com a gravação depois (cortes para reels).') };
+    if (t.tipo === 'marketing.perfil') return { titulo: 'Perfil do Instagram: sugestões', req: MKT.req(modelo, MKT.SISTEMA, MKT.contexto() + '\n\nSugira melhorias para o perfil do Instagram da BRASA: 3 opções de bio (até 150 caracteres), nome do perfil, link da bio (o que colocar), 5 destaques com capa e conteúdo, e 9 primeiros posts fixos ideais. Lembre que o dono atualiza isso no aplicativo (a API do Instagram não muda perfil).') };
+    if (t.tipo === 'social.comentario') {
+      var soc = IA.lista().filter(function (a) { return a.ativo === 'SIM' && a.papel === 'social'; })[0];
+      return { titulo: 'Comentário', semDoc: true, contato: e.contato_id,
+        req: MKT.req(modelo, MKT.SISTEMA + (soc && soc.personalidade ? ' Personalidade de quem responde: ' + soc.personalidade : ''), TR.empresa() + '\n\nComentário público de @' + (e.usuario || 'alguém') + ' num post do Instagram da BRASA: "' + U.cap(e.texto, 600) + '"' + (e.legenda_post ? '\nLegenda do post: ' + U.cap(e.legenda_post, 400) : '') + '\n\n' +
+          'Decida: "responder" (resposta pública curta, até 2 frases, simpática, sem link, sem preço; se for dúvida de compra, convide para o Direct), "ignorar" (spam, emoji solto, marcação de amigos) ou "humano" (reclamação séria, ofensa, crise). Responda SÓ com JSON: {"acao":"responder|ignorar|humano","resposta":"texto","motivo":"curto"}', 800),
+        pos: function (tx) {
+          var j = MKT.json(tx) || {}, c = e.contato_id ? contatoPorId(e.contato_id) : null;
+          if (j.acao === 'responder' && U.str(j.resposta).trim()) {
+            IG.responderComentario(e.comentario_id, j.resposta);
+            if (c) hist(c.id, '', soc ? IA.usuarioDe(soc) : null, 'comentario', 'Respondido em público: "' + U.cap(j.resposta, 200) + '"');
+            return { acao: 'responder' };
+          }
+          if (j.acao === 'humano') {
+            P.inserir('Tarefas', { id: P.id('T'), titulo: U.cap('Comentário para responder: @' + (e.usuario || '') + ' (' + (j.motivo || 'atenção') + ')', 150), tipo: 'outro', contato_id: e.contato_id || '', negocio_id: '', responsavel_id: '', vence_em: P.agora(), feita: 'NAO', notas: U.cap('"' + e.texto + '"\n' + U.str(j.resposta), 2000), criado_em: P.agora() });
+            if (c) hist(c.id, '', null, 'comentario', 'Comentário passado para a equipe: ' + U.cap(j.motivo, 150));
+            return { acao: 'humano' };
+          }
+          if (c) hist(c.id, '', null, 'comentario', 'Comentário ignorado pela IA (' + U.cap(j.motivo || 'sem resposta necessária', 100) + ')');
+          return { acao: 'ignorar' };
+        } };
+    }
+    if (t.tipo === 'produto.ideias') return { titulo: 'Ideias de produto: ' + dd(P.agora()), req: MKT.req(modelo, MKT.PRODUTO, MKT.contexto() + '\n\nFaça a análise do mês e proponha: 1) o que os dados mostram (3 a 5 pontos); 2) ajustes nos cursos atuais a partir das melhorias e feedbacks; 3) até 5 ideias de novos produtos (curso, workshop, mentoria em grupo, pacote ou assinatura), cada uma com público, promessa, formato, faixa de preço e por que agora; 4) bônus e order bumps que aumentam o valor; 5) as 3 prioridades do mês, com esforço e impacto.') };
+    if (t.tipo === 'produto.curso') return { titulo: 'Plano de curso: ' + U.cap(e.tema, 70),
+      dados: function (tx) { var j = MKT.json(tx); return j && j.curso ? j.curso : j; },
+      conteudo: function (tx, j) {
+        if (!j || !j.title) return tx;
+        return j.title + (j.subtitle ? ' - ' + j.subtitle : '') + '\nPromessa: ' + U.str(j.promise) + '\nPara quem: ' + (j.audience || []).join('; ') + '\nDores: ' + (j.pains || []).join('; ') + '\nBenefícios: ' + (j.benefits || []).join('; ') + '\nPreço sugerido: ' + brlIA(j.price) + (j.anchor_price ? ' (de ' + brlIA(j.anchor_price) + ')' : '') +
+          '\n\n' + (j.seasons || []).map(function (sd, i) { return 'Temporada ' + (i + 1) + ': ' + sd.title + '\n' + (sd.lessons || []).map(function (l, k) { return '  ' + (k + 1) + '. ' + l.title + (l.description ? ': ' + l.description : ''); }).join('\n'); }).join('\n\n') + (j.racional ? '\n\nPor que este curso: ' + j.racional : '');
+      },
+      req: MKT.req(modelo, MKT.PRODUTO, MKT.contexto() + '\n\nCrie o plano de um curso novo sobre: ' + e.tema + (e.publico ? '. Público: ' + e.publico : '') + (e.preco ? '. Faixa de preço: ' + e.preco : '') + '.\nResponda SÓ com JSON: {"curso":{"title":"","subtitle":"","category":"","level":"Iniciante|Intermediário|Avançado","price":0,"anchor_price":0,"promise":"","short_desc":"","description":"","audience":[""],"pains":[""],"benefits":[""],"seasons":[{"title":"","description":"","lessons":[{"title":"","description":"o que o aluno aprende","duration_min":10}]}],"racional":"por que este curso faz sentido para a BRASA agora"}}. De 3 a 5 temporadas, de 3 a 7 aulas cada.', 8000) };
+    return null;
+  };
+  MKT.PEDIDOS = {
+    'marketing.calendario': function (b) { return TR.criar('marketing', 'marketing.calendario', { de: U.str(b.de).slice(0, 10) || U.somaTempo(P.agora(), 1440).slice(0, 10), qtd: U.num(b.qtd), foco: U.cap(b.foco, 500) }); },
+    'marketing.campanha': function (b) { return TR.criar('marketing', 'marketing.campanha', { curso: U.cap(b.curso, 150), objetivo: U.cap(b.objetivo, 200), verba: U.cap(b.verba, 100) }); },
+    'marketing.live': function (b) { if (!U.str(b.tema).trim()) throw new Error('Diga o tema da live.'); return TR.criar('marketing', 'marketing.live', { tema: U.cap(b.tema, 300), data: U.cap(b.data, 40) }); },
+    'marketing.perfil': function () { return TR.criar('marketing', 'marketing.perfil', {}); },
+    'produto.ideias': function () { return TR.criar('produto', 'produto.ideias', {}); },
+    'produto.curso': function (b) { if (!U.str(b.tema).trim()) throw new Error('Diga o tema do curso.'); return TR.criar('produto', 'produto.curso', { tema: U.cap(b.tema, 300), publico: U.cap(b.publico, 300), preco: U.cap(b.preco, 60) }); }
+  };
+  MKT.criarPost = function (p) {
+    var o = { id: P.id('PO'), tipo: TIPOS_POST.indexOf(p.tipo) >= 0 ? p.tipo : 'feed', titulo: U.cap(p.titulo || p.arte_titulo || 'Post', 120), legenda: U.cap(p.legenda, 2200), hashtags: U.cap(p.hashtags, 400), roteiro: U.cap(p.roteiro, 4000),
+      arte_titulo: U.cap(p.arte_titulo, 120), arte_texto: U.cap(p.arte_texto, 240), imagem_url: /^(https:\/\/|blob:)/.test(U.str(p.imagem_url)) ? U.cap(p.imagem_url, 500) : '', curso: U.cap(p.curso, 150), agendar_em: U.str(p.agendar_em).slice(0, 19), status: 'rascunho', ig_id: '', permalink: '', erro: '', criado_em: P.agora(), atualizado_em: P.agora(), publicado_em: '' };
+    P.inserir('Posts', o);
+    return o;
+  };
+  /** Na hora marcada: feed sai sozinho no Instagram; carrossel, reels e stories viram lembrete para postar no celular. */
+  MKT.publicarDevidos = function () {
+    var agora = P.agora(), n = 0;
+    P.tabela('Posts').filter(function (p) { return p.status === 'agendado' && p.agendar_em && p.agendar_em <= agora; }).slice(0, 3).forEach(function (p) {
+      if (p.tipo !== 'feed') {
+        P.atualizar('Posts', p.id, { status: 'manual', atualizado_em: P.agora() });
+        P.inserir('Tarefas', { id: P.id('T'), titulo: U.cap('Postar no Instagram (' + p.tipo + '): ' + p.titulo, 150), tipo: 'outro', contato_id: '', negocio_id: '', responsavel_id: '', vence_em: agora, feita: 'NAO', notas: U.cap(p.legenda + '\n\n' + p.hashtags + (p.roteiro ? '\n\nRoteiro:\n' + p.roteiro : ''), 2000), criado_em: agora });
+        return;
+      }
+      if (!IG.ativo()) return;
+      try { MKT.publicar(p); n++; } catch (e) { P.atualizar('Posts', p.id, { status: 'erro', erro: U.cap(e.message, 300), atualizado_em: P.agora() }); }
+    });
+    return n;
+  };
+  MKT.publicar = function (p) {
+    if (!IG.ativo()) throw new Error('Ligue o Instagram em Integrações.');
+    if (!/^https:\/\//.test(p.imagem_url) && !(P.demo && /^blob:/.test(p.imagem_url))) throw new Error('O post precisa de uma imagem com endereço público (gere a arte ou cole um link https).');
+    var r = IG.publicar(p.imagem_url, p.legenda + (p.hashtags ? '\n\n' + p.hashtags : ''));
+    var mud = { status: 'publicado', ig_id: U.str(r.id), permalink: U.str(r.permalink), publicado_em: P.agora(), erro: '', atualizado_em: P.agora() };
+    P.atualizar('Posts', p.id, mud);
+    hist('', '', null, 'marketing', 'Post publicado no Instagram: ' + p.titulo);
+    return Object.assign(p, mud);
+  };
+  MKT.comentario = function (c, com) {
+    var k = cfg();
+    if (k.IG_COMENTARIOS !== 'SIM' || !IA.ativa() || !IG.ativo() || !com || !com.id || !U.str(com.texto).trim()) return;
+    if (P.tabela('Trabalhos').some(function (x) { return x.tipo === 'social.comentario' && U.json(x.entrada, {}).comentario_id === com.id; })) return;
+    var post = com.post ? P.tabela('Posts').filter(function (p) { return p.ig_id === com.post; })[0] : null;
+    TR.criar('marketing', 'social.comentario', { comentario_id: com.id, texto: U.cap(com.texto, 600), usuario: c.ig_usuario || '', contato_id: c.id, legenda_post: post ? post.legenda : '' });
+  };
+  /** Toda segunda: calendário de posts. Na primeira segunda do mês: ideias de produto. */
+  MKT.agendarRotinas = function () {
+    var k = cfg(), agora = P.agora(), hoje = agora.slice(0, 10);
+    if (!IA.ativa() || U.diaSemana(agora) !== 1 || agora.slice(11, 16) < (k.ASSIST_HORA || '08:00')) return;
+    if (k.MKT_ATIVO !== 'NAO' && k.MKT_ULTIMO !== hoje) { salvarCfg({ MKT_ULTIMO: hoje }); MKT.PEDIDOS['marketing.calendario']({ de: hoje }); }
+    if (k.PRODUTO_AUTO !== 'NAO' && Number(hoje.slice(8, 10)) <= 7 && U.str(k.PRODUTO_ULTIMO).slice(0, 7) !== hoje.slice(0, 7)) { salvarCfg({ PRODUTO_ULTIMO: hoje }); MKT.PEDIDOS['produto.ideias']({}); }
+  };
+
+  R['marketing.painel'] = function (u) {
+    exige(u, 'disparos');
+    var k = cfg();
+    return {
+      posts: P.tabela('Posts').filter(function (p) { return p.status !== 'descartado'; }).sort(function (a, b) { return (a.agendar_em || a.criado_em) < (b.agendar_em || b.criado_em) ? 1 : -1; }).slice(0, 120),
+      documentos: P.tabela('Documentos').filter(function (d) { return d.time === 'marketing'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? 1 : -1; }).slice(0, 40),
+      fila: P.tabela('Trabalhos').filter(function (t) { return t.time === 'marketing' && t.tipo !== 'social.comentario' && (t.status === 'pendente' || t.status === 'rodando' || t.status === 'erro'); }),
+      comentarios: P.tabela('Trabalhos').filter(function (t) { return t.tipo === 'social.comentario'; }).length,
+      config: { MKT_ATIVO: k.MKT_ATIVO, MKT_POSTS_SEMANA: k.MKT_POSTS_SEMANA, IG_COMENTARIOS: k.IG_COMENTARIOS },
+      instagram: IG.ativo(), ia: IA.ativa(), cursos: (function () { try { return (IA.base().courses || []).map(function (c) { return c.title; }); } catch (e) { return []; } })()
+    };
+  };
+  R['post.salvar'] = function (u, b) {
+    exige(u, 'disparos');
+    var d = b.post || {};
+    if (!d.id) { var n = MKT.criarPost(d); return n; }
+    var p = P.tabela('Posts').filter(function (x) { return x.id === d.id; })[0];
+    if (!p) throw new Error('Post não encontrado.');
+    if (p.status === 'publicado') throw new Error('Este post já foi publicado.');
+    var mud = { atualizado_em: P.agora() };
+    ['titulo', 'legenda', 'hashtags', 'roteiro', 'arte_titulo', 'arte_texto', 'curso'].forEach(function (k) { if (d[k] !== undefined) mud[k] = U.cap(d[k], k === 'legenda' ? 2200 : k === 'roteiro' ? 4000 : 400); });
+    if (d.tipo !== undefined && TIPOS_POST.indexOf(d.tipo) >= 0) mud.tipo = d.tipo;
+    if (d.imagem_url !== undefined) { if (d.imagem_url && !/^(https:\/\/|blob:)/.test(d.imagem_url)) throw new Error('A imagem precisa de um link https.'); mud.imagem_url = U.cap(d.imagem_url, 500); }
+    if (d.agendar_em !== undefined) mud.agendar_em = U.str(d.agendar_em).slice(0, 19);
+    P.atualizar('Posts', p.id, mud);
+    return Object.assign(p, mud);
+  };
+  R['post.status'] = function (u, b) {
+    exige(u, 'disparos');
+    var p = P.tabela('Posts').filter(function (x) { return x.id === b.id; })[0];
+    if (!p) throw new Error('Post não encontrado.');
+    if (p.status === 'publicado') throw new Error('Este post já foi publicado.');
+    var st = b.status;
+    if (st === 'aprovado') {
+      if (p.tipo === 'feed' && !p.imagem_url) throw new Error('Gere a arte ou cole o link da imagem antes de aprovar.');
+      if (!p.agendar_em) throw new Error('Escolha o dia e a hora do post.');
+      st = 'agendado';
+    } else if (['rascunho', 'descartado'].indexOf(st) < 0) throw new Error('Situação inválida.');
+    P.atualizar('Posts', p.id, { status: st, erro: '', atualizado_em: P.agora() });
+    return Object.assign(p, { status: st, erro: '' });
+  };
+  R['post.publicar'] = function (u, b) {
+    exige(u, 'disparos');
+    var p = P.tabela('Posts').filter(function (x) { return x.id === b.id; })[0];
+    if (!p) throw new Error('Post não encontrado.');
+    if (p.tipo !== 'feed') throw new Error('Só posts de foto única saem pela API. Carrossel, reels e stories são postados pelo celular.');
+    return MKT.publicar(p);
+  };
+  R['midia.salvar'] = function (u, b) {
+    exige(u, 'disparos');
+    var b64 = U.str(b.base64).replace(/^data:image\/\w+;base64,/, '');
+    if (!b64 || b64.length > 6000000) throw new Error('Imagem vazia ou grande demais.');
+    if (!P.midia || !P.midia.salvar) throw new Error('Envio de imagens indisponível aqui.');
+    var nome = U.norm(b.nome || 'arte').replace(/[^a-z0-9]+/g, '-').slice(0, 60) + '-' + P.agora().replace(/\D/g, '').slice(0, 14) + '.jpg';
+    return { url: P.midia.salvar(b64, nome) };
+  };
+  R['produto.criarNaBrasa'] = function (u, b) {
+    exige(u, 'relatorios');
+    var d = P.tabela('Documentos').filter(function (x) { return x.id === b.id; })[0];
+    if (!d || d.tipo !== 'produto.curso') throw new Error('Plano de curso não encontrado.');
+    var j = U.json(d.dados, null);
+    if (!j || !j.title) throw new Error('Este plano não tem a estrutura do curso. Peça um novo plano.');
+    if (j.brasa && j.brasa.id) throw new Error('Este curso já foi criado na BRASA.');
+    var r = BR.chamar('bridgeCourseDraft', { course: j });
+    j.brasa = r;
+    P.atualizar('Documentos', d.id, { dados: JSON.stringify(j), status: 'revisado', atualizado_em: P.agora() });
+    hist('', '', u, 'produto', 'Rascunho de curso criado na BRASA: ' + r.title);
+    return r;
+  };
+
   R['escritorio.painel'] = function (u, b) {
     var aba = b.aba || 'diretoria';
     if (aba === 'financeiro') { exige(u, 'financeiro'); var f = FIN2.painel(); var cs = {}; P.tabela('Contatos').forEach(function (c) { cs[c.id] = c.nome; });
@@ -4169,12 +4398,13 @@ function PrumoLogica(P) {
     if (aba === 'sucesso') return SUC.painel();
     var docs = P.tabela('Documentos').filter(function (d) { return d.time === aba; }).sort(function (a, c2) { return a.criado_em < c2.criado_em ? 1 : -1; }).slice(0, 60);
     var fila = P.tabela('Trabalhos').filter(function (t) { return t.time === aba && (t.status === 'pendente' || t.status === 'rodando' || t.status === 'erro'); });
-    return { documentos: docs, fila: fila, config: { DIRETORIA_ATIVA: cfg().DIRETORIA_ATIVA, JURIDICO_AUTO: cfg().JURIDICO_AUTO }, ia: IA.ativa() };
+    return { documentos: docs, fila: fila, config: { DIRETORIA_ATIVA: cfg().DIRETORIA_ATIVA, JURIDICO_AUTO: cfg().JURIDICO_AUTO, PRODUTO_AUTO: cfg().PRODUTO_AUTO }, ia: IA.ativa() };
   };
   R['trabalho.criar'] = function (u, b) {
     exige(u, 'relatorios');
     if (!IA.ativa()) throw new Error('Ligue a equipe IA (chave da API) em Equipe IA antes.');
     if (b.tipo === 'diretoria.semanal') return TR.semanal();
+    if (MKT.PEDIDOS[b.tipo]) return MKT.PEDIDOS[b.tipo](b);
     if (b.tipo === 'juridico.documento') {
       if (!U.str(b.tipo_doc).trim()) throw new Error('Escolha o documento.');
       return TR.criar('juridico', 'juridico.documento', { tipo_doc: U.cap(b.tipo_doc, 120), contexto: U.cap(b.contexto, 4000) });
@@ -4737,12 +4967,13 @@ function PrumoLogica(P) {
   return {
     U: U, WA: WA, IG: IG, INT: INT, EM: EM, FIN: FIN, CHAT: CHAT, SUP: SUP, cfg: cfg, arquivar: arquivar, receberRastreio: receberRastreio, salvarCfg: salvarCfg, rotear: rotear, receberWebhook: receberWebhook, trabalhar: trabalhar,
     semear: semear, receber: receber, montarTexto: montarTexto, filtrarContatos: filtrarContatos, versao: PRUMO_VERSAO,
-    IA: IA, SUC: SUC, NF: NF, FIN2: FIN2, TR: TR,
+    IA: IA, SUC: SUC, NF: NF, FIN2: FIN2, TR: TR, MKT: MKT,
     trabalharIA: function (trava, max) {
       trava = trava || function (f) { return f(); };
       var inicio = Date.now();
       try { IA.resumoDiario(trava); } catch (e) { hist('', '', null, 'ia_erro', 'Resumo diário: ' + e.message); }
-      try { trava(function () { cfgMemo = null; SUC.processar(); TR.agendarSemanal(); }); } catch (e2) { hist('', '', null, 'ia_erro', 'Sucesso/Diretoria: ' + e2.message); }
+      try { trava(function () { cfgMemo = null; SUC.processar(); TR.agendarSemanal(); MKT.agendarRotinas(); }); } catch (e2) { hist('', '', null, 'ia_erro', 'Sucesso/Diretoria: ' + e2.message); }
+      try { trava(function () { MKT.publicarDevidos(); }); } catch (e4) { hist('', '', null, 'ia_erro', 'Publicação: ' + e4.message); }
       var r = IA.rodada(trava, max);
       if (Date.now() - inicio < 90000) { try { TR.processar(trava); } catch (e3) { hist('', '', null, 'ia_erro', 'Trabalho da equipe: ' + e3.message); } }
       return r;

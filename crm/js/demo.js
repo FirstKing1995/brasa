@@ -27,6 +27,11 @@
         orders: [{ id: 'oDEMO1', course: cs0.title, amount: cs0.price, status: 'approved', method: 'pix', date: dpg, paid: dpg, in_guarantee: true, days_since_payment: 3, guarantee_days: 7 }] } };
     }
     if (body.action === 'bridgeResend') return { ok: true, data: { sent: true } };
+    if (body.action === 'bridgeCourseDraft') {
+      var cd = body.course || {}, nl = 0;
+      (cd.seasons || []).forEach(function (s) { nl += (s.lessons || []).length; });
+      return { ok: true, data: { id: 'cDEMO' + Date.now().toString(36), slug: String(cd.title || 'curso').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-'), title: cd.title, lessons: nl, admin_link: new URL('../admin.html#/cursos', location.href).href } };
+    }
     if (body.action === 'bridgeRefund') return { ok: true, data: { ok: true, order_id: body.order_id, amount: (brasaCursos()[0] || { price: 597 }).price } };
     if (body.action === 'bridgeChatReply') return { ok: true, data: { id: 'g' + Date.now() } };
     if (body.action === 'bridgeSearch') return { ok: true, data: { results: [{ course: (brasaCursos()[0] || { title: 'Tráfego Sem Romance' }).title, lesson: 'T1:E3 Público e orçamento', text: 'Comece com um público amplo, orçamento baixo por 3 dias e só então corte o que não converte. O erro mais comum é mexer na campanha antes de ela aprender.', link: new URL('../index.html#/', location.href).href }] } };
@@ -71,6 +76,23 @@
     var tx = function (t) { return resp([{ type: 'text', text: t }]); };
     var ferr = function (n, inp) { return resp([{ type: 'tool_use', id: 'tu_' + Date.now() + Math.random().toString(36).slice(2, 6), name: n, input: inp }], 'tool_use'); };
     var c0 = cursos[0] || { slug: 'curso', titulo: 'o curso', preco: 497 };
+    if (/equipe de marketing/.test(sys)) {
+      var pm = JSON.stringify(ult.content || '');
+      if (/Comentário público/.test(pm)) return tx(/golpe|absurdo|reclama|lixo/i.test(pm) ? '{"acao":"humano","resposta":"","motivo":"reclamação"}' : '{"acao":"responder","resposta":"Obrigada pelo carinho! Se quiser saber mais, te espero no Direct.","motivo":"engajamento"}');
+      if (/calendário do Instagram/.test(pm)) {
+        var cn = (pm.match(/Cursos à venda: ([^(;]+?) \(/) || [])[1] || c0.titulo;
+        return tx(JSON.stringify({ resumo: 'Semana para aquecer o público e levar para o ' + cn + '.', posts: [
+          { dia: 0, hora: '19:00', tipo: 'feed', curso: cn, titulo: 'Dor do público', arte_titulo: 'Pare de impulsionar no escuro', arte_texto: 'Anúncio bom começa antes do botão azul', legenda: 'Você impulsiona, gasta e nada acontece? O problema quase nunca é o botão. É o que vem antes dele: público, oferta e mensagem.\n\nNo ' + cn + ' a gente arruma isso do zero. Link na bio.', hashtags: '#trafegopago #marketingdigital #empreendedorismo #anuncios #brasa' },
+          { dia: 2, hora: '12:30', tipo: 'carrossel', curso: cn, titulo: 'Passo a passo', arte_titulo: '3 erros que queimam sua verba', arte_texto: 'Salve para revisar antes do próximo anúncio', legenda: 'Salve este post e confira antes de subir o próximo anúncio.', hashtags: '#trafegopago #dicas #marketing', roteiro: 'Slide 1: capa\nSlide 2: público pequeno demais\nSlide 3: mexer na campanha todo dia\nSlide 4: oferta confusa\nSlide 5: chamada para o curso' },
+          { dia: 4, hora: '18:00', tipo: 'feed', curso: cn, titulo: 'Convite', arte_titulo: 'Seu primeiro anúncio que vende', arte_texto: 'Aulas curtas, do zero ao primeiro resultado', legenda: 'Se você quer parar de depender de impulsionar e montar um anúncio de verdade, o ' + cn + ' é o caminho. Garantia de 7 dias.', hashtags: '#trafegopago #cursoonline #brasa' },
+          { dia: 5, hora: '20:00', tipo: 'reels', curso: cn, titulo: 'Bastidor', arte_titulo: 'Bastidor', arte_texto: '', legenda: 'Um pouco de como a gente prepara as aulas.', hashtags: '#bastidores #brasa', roteiro: 'Cena 1: mesa de gravação\nCena 2: tela com o gerenciador\nCena 3: fala final convidando para o curso' }] }));
+      }
+      return tx(/live/i.test(pm) ? 'Roteiro de live\n\n0-5 min: abertura e promessa da live\n5-25 min: conteúdo em 3 blocos\n25-35 min: perguntas\n35-40 min: oferta do ' + c0.titulo + '\n\nDivulgação: 3 posts e 5 stories nos dias anteriores.' : /perfil/i.test(pm) ? 'Bio, opção 1: Cursos práticos para quem quer viver de verdade. Comece grátis.\n\nDestaques: Comece aqui, Cursos, Alunos, Bastidores, Dúvidas.' : 'Campanha: ' + c0.titulo + '\n\nPúblico: empreendedores que já impulsionam sem resultado.\nÂngulos: dor, prova e oferta.\n10 títulos e 5 textos prontos.\nVerba: começar com R$ 30 por dia por 7 dias e cortar o que não vende.');
+    }
+    if (/equipe de produto/.test(sys)) {
+      if (/plano de um curso/.test(JSON.stringify(ult.content || ''))) return tx(JSON.stringify({ curso: { title: 'Copy para Anúncios', subtitle: 'Textos curtos que fazem clicar e comprar', category: 'Marketing', level: 'Iniciante', price: 297, anchor_price: 597, promise: 'Escreva anúncios que param a rolagem e levam à compra', short_desc: 'Do gancho à chamada para ação, com modelos prontos.', description: '', audience: ['Quem já anuncia e não converte', 'Quem vende pelo Instagram'], pains: ['Anúncio que ninguém clica', 'Texto que não vende'], benefits: ['Modelos de gancho', 'Revisão em 5 passos'], seasons: [{ title: 'Fundamentos', lessons: [{ title: 'O gancho', description: 'Como parar a rolagem' }, { title: 'A promessa', description: 'O que prometer sem exagero' }] }, { title: 'Prática', lessons: [{ title: 'Seu primeiro anúncio', description: 'Passo a passo' }, { title: 'Testes', description: 'Como testar 3 textos' }] }], racional: 'Alunos do Tráfego pedem mais exemplos de texto.' } }));
+      return tx('O que os dados mostram\n- Alunos pedem mais exemplos práticos.\n\nNovos produtos\n- Copy para Anúncios (R$ 297)\n- Mentoria em grupo mensal\n\nPrioridades do mês\n1. Gravar aulas extras de exemplos\n2. Lançar Copy para Anúncios\n3. Criar bônus de modelos');
+    }
     if (/assessoria jurídica/.test(sys)) return tx('RASCUNHO PARA REVISÃO DE UM ADVOGADO\n\n' + (/reclamação que pode ter risco/.test(JSON.stringify(ult.content || '')) ? 'Risco: médio. O cliente pode exercer o direito de arrependimento em 7 dias (CDC, art. 49).\n\nRecomendação: oferecer o reembolso dentro da garantia e registrar a conversa.\n\nMensagem sugerida: Oi! Entendemos sua insatisfação e já encaminhamos seu reembolso. Qualquer dúvida, estamos aqui.' : 'Documento de exemplo gerado na demonstração.\n\n1. Objeto\n- [PREENCHER]\n\n2. Garantia e reembolso\n- O aluno pode pedir o reembolso em até 7 dias (CDC, art. 49).\n\n3. Dados pessoais (LGPD)\n- Usamos seus dados só para entregar o curso e o atendimento.'));
     if (/diretoria executiva/.test(sys)) {
       if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') { var fx = {}; try { fx = JSON.parse(ult.content[0].content); } catch (e) {} return tx('Resultado da semana\n- Receita do mês: ' + (fx.receita_mes || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + (fx.meta_mes ? ' (' + fx.pct_meta + '% da meta)' : '') + '\n- Teto do MEI: ' + (fx.pct_teto || 0) + '% usado no ano\n\nDecisões para você\n- Definir a meta do mês, se ainda não definiu.\n- Revisar as melhorias mais pedidas pelos alunos.'); }
@@ -195,6 +217,7 @@
     },
     // WhatsApp simulado: toda URL "responde" como uma Evolution API conectada.
     http: function (url, o) {
+      if (/graph\.instagram\.com/.test(url)) return { code: 200, text: /media_publish/.test(url) ? '{"id":"DEMOPOST' + Date.now() + '"}' : /\/media$/.test(url) ? '{"id":"DEMOCONT"}' : /permalink/.test(url) ? '{"permalink":"https://www.instagram.com/"}' : '{"id":"DEMO"}' };
       if (/api\.anthropic\.com/.test(url)) { var rq = {}; try { rq = JSON.parse(o.body || '{}'); } catch (e) { /* nada */ } return { code: 200, text: JSON.stringify(claudeDemo(rq)) }; }
       if (/^demo:\/\/brasa/.test(url)) { var bb = {}; try { bb = JSON.parse(o.body || '{}'); } catch (e) { /* nada */ } return { code: 200, text: JSON.stringify(brasaPonte(bb)) }; }
       if (/connectionState/.test(url)) return { code: 200, text: JSON.stringify({ instance: { state: 'open' } }) };
@@ -211,6 +234,8 @@
       return { code: 200, text: '{}' };
     },
     urlApp: function () { return 'https://script.google.com/macros/s/SEU-ID-DEMO/exec'; },
+    demo: true,
+    midia: { salvar: function (b64) { var bin = atob(b64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr], { type: 'image/jpeg' })); } },
     // e-mail simulado: nada sai de verdade; parte das pessoas "abre" e "clica" sozinha
     email: {
       gmail: function (m) { simularLeitura(m.html); },
@@ -413,6 +438,7 @@
   L = PrumoLogica(P);
   // equipe IA ligada na demonstração (com o Claude simulado acima): um de cada time
   if (!db.cfg.IA_CHAVE) { db.cfg.IA_CHAVE = 'sk-ant-demonstracao-0000'; db.cfg.IA_ATIVA = 'SIM'; db.cfg.IA_ESPERA_SEG = '6'; db.cfg.IA_RECUPERAR_MIN = '1'; salvar(); }
+  if (!db.cfg.IG_TOKEN) { db.cfg.IG_TOKEN = 'demo-instagram'; db.cfg.IG_ID = 'demo'; salvar(); }
   try {
     var papeisDemo = {}; (db.t.Agentes || []).forEach(function (a) { papeisDemo[a.papel] = 1; });
     var faltam = [
@@ -420,7 +446,8 @@
       { nome: 'Mel', papel: 'recuperacao', canais: 'whatsapp', cor: '#E2A72E', desconto_max: 15, personalidade: 'Leve e prestativa.' },
       { nome: 'Tati', papel: 'suporte', canais: 'whatsapp, aluno, site, instagram', cor: '#86B7B2', desconto_max: 0, personalidade: 'Paciente, calma e resolutiva.' },
       { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0, personalidade: 'Mentora experiente e encorajadora.' },
-      { nome: 'Clara', papel: 'sucesso', canais: 'whatsapp, aluno', cor: '#DCAA68', desconto_max: 0, personalidade: 'Acolhedora e curiosa.' }
+      { nome: 'Clara', papel: 'sucesso', canais: 'whatsapp, aluno', cor: '#DCAA68', desconto_max: 0, personalidade: 'Acolhedora e curiosa.' },
+      { nome: 'Nina', papel: 'social', canais: 'instagram', cor: '#EC7A42', desconto_max: 0, personalidade: 'Simpática e rápida.' }
     ].filter(function (a) { return !papeisDemo[a.papel]; });
     if (faltam.length) {
       var sa = L.rotear({ action: 'login', email: 'admin@brasa.demo', senha: 'brasa123' });
