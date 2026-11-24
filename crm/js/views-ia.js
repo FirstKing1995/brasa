@@ -153,7 +153,7 @@
   }
 
   /* -------------------------------------------------------- aprovações */
-  var TIPOS_AP = { reembolso: ['Reembolso', 'dinheiro'], mensagem: ['Exceção', 'alerta'] };
+  var TIPOS_AP = { reembolso: ['Reembolso', 'dinheiro'], mensagem: ['Exceção', 'alerta'], missao: ['Missão para o Claude', 'robo'], ajuste_agente: ['Ajuste de agente', 'estrela'] };
   function pintarAprovacoes() {
     var raiz = C.$('#ia-raiz');
     raiz.innerHTML = '<div class="barra-ferr"><div class="seg">' + [['pendente', 'Esperando você'], ['decididas', 'Decididas']].map(function (f) { return '<button data-fap="' + f[0] + '" class="' + (filtroAp === f[0] ? 'on' : '') + '">' + f[1] + '</button>'; }).join('') + '</div></div><div id="ap-lista"><div style="text-align:center;padding:40px"><span class="spin" style="color:var(--pri)"></span></div></div>';
@@ -176,7 +176,7 @@
       C.$$('[data-dec]', box).forEach(function (b) {
         var a = l.filter(function (x) { return x.id === b.dataset.id; })[0], sim = b.dataset.dec === 'sim';
         b.onclick = function () {
-          var aviso = sim && a.tipo === 'reembolso' ? 'O dinheiro volta para o cliente pelo Mercado Pago e o acesso ao curso é retirado. <b>Não dá para desfazer.</b>' : sim ? 'O cliente recebe a mensagem combinada.' : 'O cliente recebe a mensagem de recusa.';
+          var aviso = a.tipo === 'missao' ? (sim ? 'O executor no seu PC vai rodar esta missão com o Claude Code na próxima vez que estiver ligado.' : 'A missão é cancelada.') : a.tipo === 'ajuste_agente' ? (sim ? 'A regra entra nas instruções do agente a partir da próxima conversa.' : 'Nada muda no agente.') : sim && a.tipo === 'reembolso' ? 'O dinheiro volta para o cliente pelo Mercado Pago e o acesso ao curso é retirado. <b>Não dá para desfazer.</b>' : sim ? 'O cliente recebe a mensagem combinada.' : 'O cliente recebe a mensagem de recusa.';
           C.pedirTexto(sim ? 'Aprovar: ' + a.titulo : 'Recusar: ' + a.titulo, 'Observação interna (opcional)', '', { botao: sim ? 'Aprovar' : 'Recusar' }).then(function (nota) {
             if (nota === null) return;
             C.confirmar(aviso, { titulo: sim ? 'Confirmar aprovação' : 'Confirmar recusa', botao: sim ? 'Aprovar' : 'Recusar', perigo: sim && a.tipo === 'reembolso' }).then(function (okk) {

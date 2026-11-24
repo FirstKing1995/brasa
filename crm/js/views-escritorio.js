@@ -6,7 +6,7 @@
   'use strict';
   var S = C.S, esc = C.esc, ic = C.ic;
   var aba = 'diretoria', filtroNota = 'abertas', dados = null;
-  var ABAS = [['diretoria', 'Diretoria', 'relatorios'], ['financeiro', 'Financeiro e notas', 'financeiro'], ['sucesso', 'Sucesso do cliente', 'relatorios'], ['produto', 'Produto', 'relatorios'], ['juridico', 'Jurídico', 'relatorios']];
+  var ABAS = [['diretoria', 'Diretoria', 'relatorios'], ['financeiro', 'Financeiro e notas', 'financeiro'], ['sucesso', 'Sucesso do cliente', 'relatorios'], ['produto', 'Produto', 'relatorios'], ['juridico', 'Jurídico', 'relatorios'], ['qualidade', 'Qualidade', 'relatorios'], ['ti', 'TI e missões', 'relatorios']];
   var DOCS_JUR = ['Termos de uso', 'Política de privacidade (LGPD)', 'Política de reembolso e garantia', 'Contrato de afiliados', 'Contrato de prestação de serviço', 'Resposta a reclamação (Reclame Aqui / Procon)', 'Aviso de direitos autorais do conteúdo', 'Outro'];
   var dataBr = function (d) { d = String(d || ''); return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''; };
   var pct = function (v) { return v === null || v === undefined ? '—' : v + '%'; };
@@ -25,7 +25,7 @@
   function carregar() {
     return C.api('escritorio.painel', { aba: aba }).then(function (d) {
       dados = d;
-      ({ diretoria: pintarDocs, juridico: pintarDocs, produto: pintarDocs, financeiro: pintarFinanceiro, sucesso: pintarSucesso })[aba]();
+      ({ diretoria: pintarDocs, juridico: pintarDocs, produto: pintarDocs, qualidade: pintarDocs, ti: pintarTI, financeiro: pintarFinanceiro, sucesso: pintarSucesso })[aba]();
     }).catch(function (e) { var r = C.$('#es-raiz'); if (r) r.innerHTML = '<div class="aviso">' + ic('alerta') + '<div>' + esc(e.message) + '</div></div>'; });
   }
   function kpi(i, rot, val, sub, cor) { return '<div class="card kpi"><div class="rot">' + ic(i) + rot + '</div><div class="val"' + (cor ? ' style="color:' + cor + '"' : '') + '>' + val + '</div><div class="sub">' + sub + '</div></div>'; }
@@ -33,9 +33,14 @@
 
   /* ---------------------------------------------- Diretoria e Jurídico */
   function pintarDocs() {
-    var raiz = C.$('#es-raiz'), d = dados, jur = aba === 'juridico', prod = aba === 'produto';
+    var raiz = C.$('#es-raiz'), d = dados, jur = aba === 'juridico', prod = aba === 'produto', qual = aba === 'qualidade';
     var h = d.ia ? '' : semIA();
-    if (prod) {
+    if (qual) {
+      h += '<div class="card"><div class="card-cab"><h3>' + ic('estrela') + ' Qualidade da equipe</h3><span class="acoes"><label class="check"><input type="checkbox" id="ql-auto"' + (d.config.QUALIDADE_ATIVO !== 'NAO' ? ' checked' : '') + '> Toda segunda</label></span></div><div class="card-pad">' +
+        '<p class="small muted" style="margin:0 0 10px">Toda segunda, a Qualidade lê uma amostra das conversas da equipe IA da semana, dá nota de 0 a 10 para cada agente (entendeu o cliente, resolveu, tom humano, regras), confere o ritmo da equipe humana (tarefas atrasadas, quem espera resposta) e sugere ajustes nas regras dos agentes. Cada ajuste só entra depois que você aprovar em Equipe IA > Aprovações.</p>' +
+        '<table class="tab"><thead><tr><th>Agente</th><th>Função</th><th>Nota</th><th>Conversas</th><th>Passadas</th><th>Avaliado em</th></tr></thead><tbody>' + (d.agentes || []).map(function (a) { var n = Number(a.nota); return '<tr style="cursor:default"><td>' + esc(a.nome) + '</td><td>' + esc(a.papel || 'vendas') + '</td><td class="num"' + (a.nota ? ' style="color:' + (n >= 8 ? 'var(--verde)' : n >= 6 ? 'var(--amarelo)' : 'var(--vermelho)') + '"' : '') + '>' + (a.nota || '—') + '</td><td class="num">' + C.inteiro(a.conversas) + '</td><td class="num">' + C.inteiro(a.passadas) + '</td><td>' + (a.em ? C.fmtData(a.em) : '—') + '</td></tr>'; }).join('') + '</tbody></table>' +
+        '<div style="margin-top:12px"><button class="btn pri" id="ql-ok">' + ic('relatorios') + ' Auditar agora</button></div></div></div>';
+    } else if (prod) {
       h += '<div class="grid-2" style="align-items:start"><div class="card"><div class="card-cab"><h3>' + ic('estrela') + ' Planejar um curso novo</h3></div><div class="card-pad">' +
         '<p class="small muted" style="margin:0 0 10px">A equipe de Produto monta promessa, público, preço e a grade de temporadas e aulas, usando o que os alunos pedem. Depois, um clique cria o curso como rascunho na BRASA.</p>' +
         '<div class="campo"><label>Tema</label><input class="inp" id="pr-tema" placeholder="Ex.: copy para anúncios"></div><div class="campo"><label>Público (opcional)</label><input class="inp" id="pr-pub"></div><div class="campo"><label>Faixa de preço (opcional)</label><input class="inp" id="pr-preco" placeholder="Ex.: R$ 297 a R$ 497"></div>' +
@@ -56,11 +61,14 @@
         '<label class="check" style="margin-left:auto"><input type="checkbox" id="dr-auto"' + (d.config.DIRETORIA_ATIVA !== 'NAO' ? ' checked' : '') + '> Gerar toda segunda</label></div></div></div>';
     }
     if (d.fila.length) h += '<div class="aviso info" style="margin-top:14px">' + ic('relogio') + '<div>' + d.fila.map(function (f) { var e = C.json(f.entrada, {}); return '<div>' + esc(e.tipo_doc || (f.tipo === 'diretoria.semanal' ? 'Relatório da semana' : f.tipo === 'juridico.caso' ? 'Análise de reclamação: ' + (e.nome || '') : f.tipo)) + ': ' + (f.status === 'erro' ? '<b style="color:var(--vermelho)">erro</b> (' + esc(f.erro) + ') <a href="#" data-rep="' + f.id + '">tentar de novo</a>' : 'na fila, fica pronto em 1 ou 2 minutos') + '</div>'; }).join('') + '</div></div>';
-    h += '<h3 style="margin:22px 0 10px">' + (jur ? 'Documentos' : prod ? 'Planos e ideias' : 'Relatórios') + '</h3>';
+    h += '<h3 style="margin:22px 0 10px">' + (jur ? 'Documentos' : prod ? 'Planos e ideias' : qual ? 'Auditorias' : 'Relatórios') + '</h3>';
     h += d.documentos.length ? '<div class="lista-cards">' + d.documentos.map(function (x) {
       return '<button class="card item-card" style="text-align:left;cursor:pointer;width:100%" data-doc="' + x.id + '">' + ic(jur ? 'escudo' : 'relatorios') + '<div class="meio"><h3>' + esc(x.titulo) + '</h3><span class="small muted">' + C.fmtData(x.criado_em) + ' · ' + esc(x.conteudo.replace(/\s+/g, ' ').slice(0, 120)) + '…</span></div><span class="status ' + (x.status === 'revisado' ? 'st-on' : 'st-off') + '">' + (x.status === 'revisado' ? 'Revisado' : x.status === 'arquivado' ? 'Arquivado' : 'Rascunho') + '</span></button>';
     }).join('') + '</div>' : '<div class="card"><div class="vazio">' + ic(jur ? 'escudo' : 'relatorios') + '<h3>Nada por aqui ainda</h3></div></div>';
     raiz.innerHTML = h;
+    var bq = C.$('#ql-ok');
+    if (bq) bq.onclick = function () { C.comBotao(bq, function () { return C.api('trabalho.criar', { tipo: 'qualidade.auditoria' }).then(function () { C.toast('A Qualidade está auditando as conversas.', 'ok'); return carregar(); }); }); };
+    var qa = C.$('#ql-auto'); if (qa) qa.onchange = function () { C.api('config.salvar', { config: { QUALIDADE_ATIVO: qa.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }); };
     var bp = C.$('#pr-ok');
     if (bp) bp.onclick = function () { C.comBotao(bp, function () { return C.api('trabalho.criar', { tipo: 'produto.curso', tema: C.$('#pr-tema').value, publico: C.$('#pr-pub').value, preco: C.$('#pr-preco').value }).then(function () { C.toast('A equipe de Produto está montando o plano.', 'ok'); return carregar(); }); }); };
     var bi = C.$('#pr-ideias');
@@ -92,6 +100,68 @@
     });
   }
 
+  /* ------------------------------------------------- TI e missões */
+  var ST_MI = { aguardando: ['Esperando aprovação', 'st-aviso'], pronta: ['Na fila', 'st-aviso'], executando: ['Rodando no PC', 'st-roxo'], concluida: ['Concluída', 'st-on'], parcial: ['Parcial', 'st-aviso'], erro: ['Erro', 'st-erro'], cancelada: ['Cancelada', 'st-off'] };
+  function pintarTI() {
+    var raiz = C.$('#es-raiz'), d = dados, sd = d.saude || {};
+    raiz.innerHTML = '<div style="text-align:center;padding:30px"><span class="spin" style="color:var(--pri)"></span></div>';
+    C.api('missao.listar').then(function (ml) {
+      var it = sd.integracoes || {}, bom = function (v) { return /^(conectado|ligad|online)/.test(v); };
+      var h = '<div class="kpis">' + Object.keys(it).map(function (k) { return kpi(bom(it[k]) ? 'check' : 'alerta', { whatsapp: 'WhatsApp', instagram: 'Instagram', brasa: 'BRASA', ia: 'Equipe IA', executor_pc: 'Executor no PC' }[k] || k, bom(it[k]) ? 'OK' : 'Atenção', esc(it[k]), bom(it[k]) ? 'var(--verde)' : 'var(--amarelo)'); }).join('') +
+        kpi('alerta', 'Erros da IA (7 dias)', C.inteiro(sd.erros_ia_7d), (sd.erros_servidor || []).length + ' erros recentes no servidor', sd.erros_ia_7d ? 'var(--amarelo)' : '') + '</div>';
+      // executor
+      h += '<div class="card" style="margin-top:14px"><div class="card-cab"><h3>' + ic('robo') + ' Missões para o Claude Code no seu PC</h3><span class="acoes"><span class="status ' + (ml.online ? 'st-on' : 'st-off') + '">' + (ml.online ? 'Executor online' : 'Executor offline') + '</span></span></div><div class="card-pad">' +
+        '<p class="small muted" style="margin:0 0 10px">O que não tem API (ou cuja API é paga) vira <b>missão</b>: o executor no seu PC pergunta a cada minuto se há missão pronta, abre o Claude Code com o seu Chrome já logado, faz a tarefa (agendar posts no Meta Business Suite, emitir notas no Emissor Nacional, atualizar a bio, montar campanha pausada) e devolve o resultado aqui. Missões sugeridas pela IA só rodam depois da sua aprovação. O Claude Code nunca digita senha, nunca paga e nunca ativa anúncio.</p>' +
+        (ml.configurado ? '<div class="small">Último sinal do executor: ' + (ml.visto ? C.fmtData(ml.visto) : 'nunca') + '. Para ligar: no PC, dê dois cliques em <b>ferramentas-pc\\iniciar-executor.cmd</b> (pasta da BRASA) e deixe a janela aberta.</div>' : '<div class="aviso info">' + ic('info') + '<div>O executor ainda não foi configurado no PC. Gere a chave e cole no arquivo <b>executor-config.json</b> da pasta ferramentas-pc.</div></div>') +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" id="mi-nova">' + ic('plus') + ' Nova missão</button>' + (C.pode('ajustes') ? '<button class="btn" id="mi-chave">' + ic('escudo') + ' ' + (ml.configurado ? 'Trocar a chave do executor' : 'Gerar a chave do executor') + '</button>' : '') + '<button class="btn" id="ti-diag">' + ic('relatorios') + ' Diagnóstico de TI agora</button></div></div></div>';
+      h += '<h3 style="margin:22px 0 10px">Missões</h3>' + (ml.missoes.length ? '<div class="lista-cards">' + ml.missoes.map(function (m) {
+        var st = ST_MI[m.status] || [m.status, 'st-off'];
+        return '<div class="card item-card">' + ic(m.tipo === 'codigo' ? 'api' : 'robo') + '<div class="meio"><h3>' + esc(m.titulo) + '</h3><span class="small muted">' + esc((ml.tipos[m.tipo] || {}).nome || m.tipo) + ' · ' + esc(m.criado_por) + ' · ' + C.fmtData(m.criado_em) + (U(m.custo) ? ' · US$ ' + Number(m.custo).toFixed(2) : '') + '</span>' +
+          (m.resultado ? '<div class="small" style="margin-top:4px;white-space:pre-wrap">' + esc(m.resultado.slice(0, 400)) + '</div>' : '') + (m.erro ? '<div class="small" style="color:var(--vermelho);margin-top:4px">' + esc(m.erro) + '</div>' : '') + '</div>' +
+          '<span class="status ' + st[1] + '">' + st[0] + '</span>' + (m.status === 'erro' || m.status === 'cancelada' || m.status === 'parcial' ? '<button class="btn peq" data-mi="repetir" data-id="' + m.id + '">Repetir</button>' : '') + (m.status === 'pronta' || m.status === 'aguardando' ? '<button class="btn peq fantasma" data-mi="cancelar" data-id="' + m.id + '">Cancelar</button>' : '') + '</div>';
+      }).join('') + '</div>' : '<div class="card"><div class="vazio">' + ic('robo') + '<h3>Nenhuma missão ainda</h3><p>Use os botões "Mandar o Claude..." em Conteúdo, Notas fiscais e nos planos, ou crie uma missão aqui.</p></div></div>');
+      if ((sd.erros_por_tipo || []).length || (sd.erros_servidor || []).length) h += '<h3 style="margin:22px 0 10px">Erros recentes</h3><div class="card"><div class="card-pad small">' + (sd.erros_por_tipo || []).map(function (e) { return '<div>' + e.vezes + 'x ' + esc(e.erro) + '</div>'; }).join('') + (sd.erros_servidor || []).slice(0, 10).map(function (e) { return '<div class="muted">' + esc(e.data) + ' · ' + esc(e.onde) + ' · ' + esc(e.erro) + '</div>'; }).join('') + '</div></div>';
+      h += '<h3 style="margin:22px 0 10px">Diagnósticos</h3>' + (d.documentos.length ? '<div class="lista-cards">' + d.documentos.map(function (x) { return '<button class="card item-card" style="text-align:left;cursor:pointer;width:100%" data-doc="' + x.id + '">' + ic('relatorios') + '<div class="meio"><h3>' + esc(x.titulo) + '</h3><span class="small muted">' + C.fmtData(x.criado_em) + '</span></div></button>'; }).join('') + '</div>' : '<p class="muted small">Toda segunda a TI faz um diagnóstico e pode sugerir missões de código (que só rodam com a sua aprovação, num ramo separado, sem publicar).</p>');
+      raiz.innerHTML = h;
+      C.$('#mi-nova').onclick = function () { novaMissao(); };
+      var bc = C.$('#mi-chave');
+      if (bc) bc.onclick = function () {
+        C.confirmar(ml.configurado ? 'Gerar uma chave nova? O executor do PC para de funcionar até você trocar a chave no arquivo dele.' : 'Gerar a chave do executor?', { botao: 'Gerar' }).then(function (sim) {
+          if (!sim) return;
+          C.api('missao.chave').then(function (r) {
+            var conf = JSON.stringify({ crm_url: r.url, chave: r.chave, intervalo_seg: 60, projeto: 'F:/DHIONE/0001 - CLAUDE/apps meus/brasa-plataforma/brasa' }, null, 2);
+            C.modal({ titulo: 'Configuração do executor', tamanho: 'largo', corpo: '<p class="small" style="margin:0 0 10px">Salve este conteúdo como <b>executor-config.json</b> na pasta <b>ferramentas-pc</b> da BRASA, no seu PC. A chave só aparece agora. Não compartilhe.</p><textarea class="inp" rows="8" readonly style="font-family:monospace">' + esc(conf) + '</textarea>',
+              pe: '<button class="btn pri" id="cf-cp">' + ic('copiar') + ' Copiar</button>', aoAbrir: function (el) { el.querySelector('#cf-cp').onclick = function () { C.copiar(conf); }; } });
+            carregar();
+          }).catch(function (e) { C.toast(e.message, 'erro'); });
+        });
+      };
+      C.$('#ti-diag').onclick = function () { var b = this; C.comBotao(b, function () { return C.api('trabalho.criar', { tipo: 'ti.diagnostico' }).then(function () { C.toast('A TI está analisando o sistema.', 'ok'); }); }); };
+      C.$$('[data-mi]', raiz).forEach(function (b) { b.onclick = function () { C.api('missao.cancelar', { id: b.dataset.id, repetir: b.dataset.mi === 'repetir' }).then(function () { C.toast(b.dataset.mi === 'repetir' ? 'Missão de volta na fila' : 'Missão cancelada', 'ok'); carregar(); }).catch(function (e) { C.toast(e.message, 'erro'); }); }; });
+      C.$$('[data-doc]', raiz).forEach(function (x) { x.onclick = function () { abrirDoc(d.documentos.filter(function (y) { return y.id === x.dataset.doc; })[0]); }; });
+    }).catch(function (e) { raiz.innerHTML = '<div class="aviso">' + ic('alerta') + '<div>' + esc(e.message) + '</div></div>'; });
+  }
+  function U(v) { return Number(v) > 0; }
+  function novaMissao() {
+    C.modal({ titulo: 'Nova missão para o Claude Code', tamanho: 'largo',
+      corpo: '<div class="campo"><label>Tipo</label><select class="inp" id="nm-tipo"><option value="livre">Tarefa no navegador</option><option value="instagram.bio">Atualizar a bio do Instagram</option><option value="codigo">Melhoria no código da BRASA</option></select></div>' +
+        '<div class="campo"><label>Título</label><input class="inp" id="nm-tit" maxlength="150"></div>' +
+        '<div class="campo"><label id="nm-rot">O que fazer (seja específico: site, o que clicar, o que escrever)</label><textarea class="inp" id="nm-ins" rows="5"></textarea></div>' +
+        '<p class="small muted" style="margin:0">O Chrome precisa estar aberto e logado no site. O Claude Code nunca digita senha nem paga nada: se precisar de login, a missão volta com o aviso.</p>',
+      pe: '<button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="nm-ok">' + ic('robo') + ' Mandar para a fila</button>',
+      aoAbrir: function (el) {
+        var tp = el.querySelector('#nm-tipo');
+        tp.onchange = function () { el.querySelector('#nm-rot').textContent = tp.value === 'instagram.bio' ? 'Nova bio (até 150 caracteres)' : tp.value === 'codigo' ? 'Melhoria (o que mudar e como saber que ficou pronto)' : 'O que fazer (seja específico: site, o que clicar, o que escrever)'; };
+        el.querySelector('#nm-ok').onclick = function () {
+          var v = el.querySelector('#nm-ins').value;
+          C.comBotao(this, function () { return C.api('missao.criar', { tipo: tp.value, titulo: el.querySelector('#nm-tit').value, instrucoes: v, bio: v }).then(function () { el.fechar(); C.toast('Missão na fila. O executor do PC pega em até 1 minuto.', 'ok'); carregar(); }); });
+        };
+      } });
+  }
+  C.mandarClaude = function (dadosMissao, msg) {
+    return C.api('missao.criar', dadosMissao).then(function (m) { C.toast((msg || 'Missão na fila') + ': ' + m.titulo + '. Deixe o executor ligado no PC e o Chrome logado.', 'ok'); return m; });
+  };
+
   /* -------------------------------------------------------- Financeiro */
   function pintarFinanceiro() {
     var raiz = C.$('#es-raiz'), f = dados, k = f.config;
@@ -113,7 +183,7 @@
       '<p class="small muted" style="margin:12px 0 0">MEI só é obrigado a emitir nota para empresa (CNPJ). Para pessoa física, a nota é opcional, a não ser que o cliente peça. Emitir para todas ajuda a comprovar a receita na declaração anual (DASN-SIMEI).</p></div></div>';
     var lista = f.notas.filter(function (n) { return filtroNota === 'todas' ? true : filtroNota === 'emitidas' ? n.status === 'emitida' : n.status === 'pendente' || n.status === 'cancelar'; });
     h += '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px;flex-wrap:wrap"><h3 style="margin:0">Notas fiscais</h3><div class="seg">' + [['abertas', 'A emitir'], ['emitidas', 'Emitidas'], ['todas', 'Todas']].map(function (x) { return '<button data-fnf="' + x[0] + '" class="' + (filtroNota === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-      '<a class="btn peq" style="margin-left:auto" href="' + esc(f.emissor) + '" target="_blank" rel="noopener">' + ic('externo') + ' Abrir o Emissor Nacional</a></div>';
+      (f.notas_pendentes ? '<button class="btn peq pri" style="margin-left:auto" id="fn-claude">' + ic('robo') + ' Mandar o Claude emitir as pendentes</button>' : '') + '<a class="btn peq"' + (f.notas_pendentes ? '' : ' style="margin-left:auto"') + ' href="' + esc(f.emissor) + '" target="_blank" rel="noopener">' + ic('externo') + ' Abrir o Emissor Nacional</a></div>';
     h += lista.length ? '<div class="lista-cards">' + lista.map(function (n) {
       var st = { pendente: ['A emitir', 'st-aviso'], cancelar: ['Cancelar no emissor', 'st-erro'], emitida: ['Emitida', 'st-on'], dispensada: ['Dispensada', 'st-off'], cancelada: ['Cancelada', 'st-off'] }[n.status] || [n.status, 'st-off'];
       return '<div class="card item-card">' + ic('nota') + '<div class="meio"><h3>' + esc(n.tomador_nome || n.contato_nome) + ' · ' + C.brl(n.valor) + '</h3><span class="small muted">' + esc(n.curso) + ' · ' + esc(n.motivo) + ' · ' + dataBr(n.criado_em) + (n.numero ? ' · nº ' + esc(n.numero) : '') + '</span></div><span class="status ' + st[1] + '">' + st[0] + '</span>' +
@@ -124,6 +194,7 @@
       var cfg = { META_MES: String(C.num(C.$('#fn-meta').value) || ''), MEI_LIMITE: String(C.num(C.$('#fn-teto').value) || 81000), NF_EMITIR: C.$('#fn-nf').value, NF_DESCRICAO: C.$('#fn-desc').value.trim() || 'Curso online: {curso}' };
       C.comBotao(this, function () { return C.api('config.salvar', { config: cfg }).then(function () { C.toast('Salvo', 'ok'); return carregar(); }); });
     };
+    var fc = C.$('#fn-claude'); if (fc) fc.onclick = function () { C.comBotao(fc, function () { return C.mandarClaude({ tipo: 'nfse.emitir' }, 'O Claude vai emitir no Emissor Nacional (entre com a conta gov.br no Chrome antes)'); }); };
     var bd = C.$('#fn-das'); if (bd) bd.onclick = function () { C.comBotao(bd, function () { return C.api('config.salvar', { config: { DAS_PAGO: C.hoje().slice(0, 7) } }).then(carregar); }); };
     C.$$('[data-fnf]', raiz).forEach(function (b) { b.onclick = function () { filtroNota = b.dataset.fnf; pintarFinanceiro(); }; });
     C.$$('[data-nf]', raiz).forEach(function (b) { b.onclick = function () { emitir(f.notas.filter(function (n) { return n.id === b.dataset.nf; })[0], f.emissor); }; });

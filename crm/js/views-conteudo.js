@@ -7,7 +7,7 @@
   var S = C.S, esc = C.esc, ic = C.ic;
   var dados = null, filtro = 'proximos';
   var TIPOS = { feed: 'Feed (foto)', carrossel: 'Carrossel', reels: 'Reels', stories: 'Stories' };
-  var STATUS = { rascunho: ['Rascunho', 'st-off'], agendado: ['Agendado', 'st-aviso'], publicado: ['Publicado', 'st-on'], manual: ['Postar no celular', 'st-roxo'], erro: ['Erro', 'st-erro'] };
+  var STATUS = { rascunho: ['Rascunho', 'st-off'], agendado: ['Agendado', 'st-aviso'], publicado: ['Publicado', 'st-on'], manual: ['Postar no celular', 'st-roxo'], erro: ['Erro', 'st-erro'], agendado_meta: ['Agendado no Meta', 'st-on'] };
 
   C.views.conteudo = {
     titulo: 'Conteúdo e campanhas',
@@ -65,7 +65,8 @@
     var raiz = C.$('#ct-raiz'), d = dados, k = d.config;
     var h = '';
     if (!d.ia) h += '<div class="aviso info" style="margin-bottom:14px">' + ic('robo') + '<div>Ligue a equipe IA em <b>Equipe IA</b> para o Marketing montar calendários, campanhas e roteiros.</div></div>';
-    if (!d.instagram) h += '<div class="aviso" style="margin-bottom:14px">' + ic('instagram') + '<div>O Instagram não está ligado. Os posts ficam prontos aqui, mas só saem sozinhos depois de ligar o Instagram em Integrações (com a permissão de publicar conteúdo e de responder comentários).</div></div>';
+    var prontos = d.posts.filter(function (p) { return p.status === 'agendado' && (p.tipo === 'feed' || p.tipo === 'stories') && /^https:/.test(p.imagem_url); }).length;
+    if (!d.instagram) h += '<div class="aviso" style="margin-bottom:14px">' + ic('instagram') + '<div>O Instagram não está ligado pela API. Sem problema: aprove os posts e clique em <b>Mandar o Claude agendar</b>. O executor no seu PC abre o Meta Business Suite no seu Chrome (já logado) e programa tudo, sem custo.' + (prontos ? ' <button class="btn peq pri" id="ct-claude" style="margin-left:8px">' + ic('robo') + ' Mandar o Claude agendar ' + prontos + ' post' + (prontos > 1 ? 's' : '') + '</button>' : '') + '</div></div>';
     h += '<div class="card"><div class="card-pad" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
       '<button class="btn" data-ped="campanha">' + ic('alvo') + ' Planejar campanha de anúncios</button><button class="btn" data-ped="live">' + ic('play') + ' Roteiro de live</button><button class="btn" data-ped="perfil">' + ic('usuarioMais') + ' Melhorar o perfil</button>' +
       '<span style="flex:1"></span><label class="check"><input type="checkbox" id="ct-auto"' + (k.MKT_ATIVO !== 'NAO' ? ' checked' : '') + '> Montar a semana toda segunda</label>' +
@@ -98,6 +99,7 @@
       var p = d.posts.filter(function (x) { return x.id === box.dataset.arte; })[0], cv = C.arte(p);
       box.appendChild(cv); box.classList.add('sem-img');
     });
+    var cc = C.$('#ct-claude'); if (cc) cc.onclick = function () { C.comBotao(cc, function () { return C.mandarClaude({ tipo: 'instagram.agendar' }, 'O Claude vai agendar no Meta Business Suite'); }); };
     C.$('#ct-auto').onchange = function () { C.api('config.salvar', { config: { MKT_ATIVO: this.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }); };
     C.$('#ct-com').onchange = function () { C.api('config.salvar', { config: { IG_COMENTARIOS: this.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }); };
     C.$$('[data-flt]', raiz).forEach(function (b) { b.onclick = function () { filtro = b.dataset.flt; pintar(); }; });
@@ -148,9 +150,11 @@
   }
   function verDoc(x) {
     C.modal({ titulo: x.titulo, tamanho: 'xl', corpo: '<textarea class="inp" id="vd-txt" rows="20" style="font-family:inherit;line-height:1.5">' + esc(x.conteudo) + '</textarea>',
-      pe: '<button class="btn" id="vd-copiar">' + ic('copiar') + ' Copiar</button><button class="btn pri" id="vd-ok">' + ic('check') + ' Salvar</button>',
+      pe: (x.tipo === 'marketing.perfil' ? '<button class="btn" id="vd-bio">' + ic('robo') + ' Mandar o Claude trocar a bio</button>' : x.tipo === 'marketing.campanha' ? '<button class="btn" id="vd-ads">' + ic('robo') + ' Mandar o Claude montar (pausada)</button>' : '') + '<button class="btn" id="vd-copiar">' + ic('copiar') + ' Copiar</button><button class="btn pri" id="vd-ok">' + ic('check') + ' Salvar</button>',
       aoAbrir: function (el) {
         el.querySelector('#vd-copiar').onclick = function () { C.copiar(el.querySelector('#vd-txt').value); };
+        var vb = el.querySelector('#vd-bio'); if (vb) vb.onclick = function () { C.pedirTexto('Nova bio do Instagram', 'Texto da bio (até 150 caracteres)', '', { botao: 'Mandar o Claude' }).then(function (bio) { if (bio) C.mandarClaude({ tipo: 'instagram.bio', bio: bio }, 'O Claude vai trocar a bio').catch(function (e) { C.toast(e.message, 'erro'); }); }); };
+        var va = el.querySelector('#vd-ads'); if (va) va.onclick = function () { C.confirmar('O Claude vai montar esta campanha no Gerenciador de Anúncios, tudo <b>pausado</b>. Ele não ativa nada nem mexe em pagamento: você revisa e ativa quando quiser.', { botao: 'Mandar o Claude' }).then(function (s) { if (s) C.mandarClaude({ tipo: 'meta_ads.campanha', documento_id: x.id }, 'O Claude vai montar a campanha pausada').catch(function (e) { C.toast(e.message, 'erro'); }); }); };
         el.querySelector('#vd-ok').onclick = function () { C.api('documento.salvar', { id: x.id, conteudo: el.querySelector('#vd-txt').value, status: 'revisado' }).then(function () { el.fechar(); C.toast('Salvo', 'ok'); carregar(); }).catch(function (e) { C.toast(e.message, 'erro'); }); };
       } });
   }

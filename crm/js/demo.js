@@ -76,6 +76,8 @@
     var tx = function (t) { return resp([{ type: 'text', text: t }]); };
     var ferr = function (n, inp) { return resp([{ type: 'tool_use', id: 'tu_' + Date.now() + Math.random().toString(36).slice(2, 6), name: n, input: inp }], 'tool_use'); };
     var c0 = cursos[0] || { slug: 'curso', titulo: 'o curso', preco: 497 };
+    if (/equipe de TI/.test(sys)) return tx(JSON.stringify({ relatorio: 'Situação geral: estável.\n\nPontos de atenção\n- O executor de missões do PC está offline: as missões ficam na fila até ele ligar.\n- WhatsApp sem API: a equipe IA não consegue responder por lá.\n\nPrioridades\n1. Ligar o executor no PC.\n2. Ligar o WhatsApp por API.', missoes: [{ titulo: 'Mostrar no Painel quando o executor ficar offline', descricao: 'Adicionar um aviso no Painel do CRM quando o executor não der sinal há mais de 10 minutos.' }] }));
+    if (/Qualidade e Pessoas/.test(sys)) return tx(JSON.stringify({ resumo: 'Semana boa: respostas rápidas e cordiais. Um ponto de atenção: link de compra enviado cedo demais em algumas conversas.', avaliacoes: [], agentes: [{ nome: 'Luna', nota_media: 8.5, resumo: 'Cordial e objetiva, mas às vezes manda o link antes de entender o objetivo.', ajuste: 'Só mande o link de compra depois de entender o objetivo da pessoa.' }], equipe_humana: 'Sem tarefas atrasadas.' }));
     if (/equipe de marketing/.test(sys)) {
       var pm = JSON.stringify(ult.content || '');
       if (/Comentário público/.test(pm)) return tx(/golpe|absurdo|reclama|lixo/i.test(pm) ? '{"acao":"humano","resposta":"","motivo":"reclamação"}' : '{"acao":"responder","resposta":"Obrigada pelo carinho! Se quiser saber mais, te espero no Direct.","motivo":"engajamento"}');
