@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.5.0';
+var PRUMO_VERSAO = '1.6.0';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -36,6 +36,12 @@ var PRUMO_ESQUEMA = {
   Agentes: ['id', 'nome', 'ativo', 'papel', 'canais', 'personalidade', 'regras', 'conhecimento', 'desconto_max', 'cor', 'usuario_id', 'conversas', 'mensagens', 'passadas',
     'tokens_in', 'tokens_out', 'custo', 'criado_em', 'atualizado_em'],
   Aprovacoes: ['id', 'tipo', 'titulo', 'descricao', 'dados', 'contato_id', 'agente_id', 'status', 'resultado', 'criado_em', 'decidido_em', 'decidido_por'],
+  Acompanhamentos: ['id', 'contato_id', 'tipo', 'curso', 'nota', 'quando', 'status', 'tentativas', 'criado_em', 'feito_em'],
+  Feedbacks: ['id', 'contato_id', 'agente_id', 'curso', 'momento', 'nps', 'sentimento', 'travou', 'esperava', 'faltou', 'ajudou', 'comentario', 'depoimento', 'depoimento_ok', 'criado_em', 'atualizado_em'],
+  Melhorias: ['id', 'area', 'curso', 'titulo', 'descricao', 'votos', 'origem', 'status', 'criado_em', 'atualizado_em'],
+  Notas: ['id', 'contato_id', 'pedido_id', 'curso', 'valor', 'tomador_nome', 'tomador_doc', 'tomador_email', 'motivo', 'status', 'numero', 'link', 'criado_em', 'emitida_em', 'emitida_por'],
+  Documentos: ['id', 'time', 'tipo', 'titulo', 'conteudo', 'contato_id', 'status', 'criado_em', 'atualizado_em'],
+  Trabalhos: ['id', 'time', 'tipo', 'entrada', 'status', 'documento_id', 'erro', 'tentativas', 'criado_em', 'feito_em'],
   Config: ['chave', 'valor']
 };
 
@@ -121,6 +127,12 @@ var PRUMO_CONFIG_PADRAO = {
   IA_RECUPERAR: 'SIM', IA_RECUPERAR_MIN: '20', // a equipe de recuperação chama sozinha carrinho, Pix vencido, cartão recusado, aluno parado e estreia
   // Assistente: resumo diário para o dono (e-mail e WhatsApp)
   ASSIST_ATIVO: 'NAO', ASSIST_HORA: '08:00', ASSIST_EMAIL: '', ASSIST_WHATS: '', ASSIST_ULTIMO: '',
+  // Sucesso do Cliente: dias depois da compra para boas-vindas, experiência e nota (NPS)
+  SUCESSO_ATIVO: 'SIM', SUCESSO_DIAS: '2, 6, 30',
+  // Financeiro: meta de receita do mês, teto anual do MEI, nota fiscal (pedido = só PJ e quem pedir; todas = toda venda)
+  META_MES: '', MEI_LIMITE: '81000', DAS_PAGO: '', NF_EMITIR: 'pedido', NF_DESCRICAO: 'Curso online: {curso}',
+  // Diretoria (relatório toda segunda) e Jurídico (análise automática de reclamações graves)
+  DIRETORIA_ATIVA: 'SIM', DIRETORIA_ULTIMA: '', JURIDICO_AUTO: 'SIM',
   PROX_TRABALHO: ''
 };
 
@@ -2152,7 +2164,7 @@ function PrumoLogica(P) {
 
   /* ===================================================== integrações */
   var INT = {};
-  var EVENTO_ROTULO = { cadastro: 'Cadastro grátis', pix_expirado: 'Pix vencido', aluno_parado: 'Aluno parado', curso_concluido: 'Concluiu um curso', lista_espera: 'Estreia (lista de espera)', compra_aprovada: 'Comprou', carrinho_abandonado: 'Carrinho abandonado', boleto_gerado: 'Boleto gerado', pix_gerado: 'Pix gerado', reembolso: 'Reembolso', cancelado: 'Cancelou', recusado: 'Pagamento recusado' };
+  var EVENTO_ROTULO = { progresso_metade: 'Metade do curso', cadastro: 'Cadastro grátis', pix_expirado: 'Pix vencido', aluno_parado: 'Aluno parado', curso_concluido: 'Concluiu um curso', lista_espera: 'Estreia (lista de espera)', compra_aprovada: 'Comprou', carrinho_abandonado: 'Carrinho abandonado', boleto_gerado: 'Boleto gerado', pix_gerado: 'Pix gerado', reembolso: 'Reembolso', cancelado: 'Cancelou', recusado: 'Pagamento recusado' };
   /** Reconhece eventos de venda da Hotmart e da Kiwify (e de outras com campos parecidos). */
   INT.evento = function (body, plano, fonte) {
     var ev = '', plataforma = '', produto = '', valor = 0;
@@ -2191,6 +2203,7 @@ function PrumoLogica(P) {
     if (b.link_curso) cp.link_curso = U.cap(b.link_curso, 500);
     if (b.detalhe) cp.situacao = U.cap(b.detalhe, 300);
     if (b.pedido_id) cp.pedido_brasa = U.cap(b.pedido_id, 60);
+    if (U.dig(b.documento).length === 11 || U.dig(b.documento).length === 14) cp.documento = U.dig(b.documento);
     P.atualizar('Contatos', c.id, { campos: JSON.stringify(cp), atualizado_em: P.agora() }); c.campos = JSON.stringify(cp);
     if (ev.evento === 'cadastro' && c.status !== 'cliente') P.atualizar('Contatos', c.id, { status: 'lead' });
     // quem fechou pela condição especial: o negócio fica com o vendedor que criou o link
@@ -2249,6 +2262,8 @@ function PrumoLogica(P) {
     saida('compra.' + ev.evento, { contato: contatoPublico(c), produto: ev.produto, valor: ev.valor, plataforma: ev.plataforma });
     gatilho('evento', c, { evento: ev.evento, produto: ev.produto });
     try { IA.aoEvento(c, ev); } catch (eI) { hist(c.id, '', null, 'ia_erro', 'Recuperação: ' + eI.message); }
+    try { SUC.aoEvento(c, ev); } catch (eS) { hist(c.id, '', null, 'ia_erro', 'Sucesso do cliente: ' + eS.message); }
+    try { NF.aoEvento(c, ev); } catch (eN) { hist(c.id, '', null, 'ia_erro', 'Nota fiscal: ' + eN.message); }
   };
 
   /** ActiveCampaign: cria/atualiza o contato, coloca na lista e aplica tags. */
@@ -2487,7 +2502,7 @@ function PrumoLogica(P) {
     return o;
   }
 
-  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO', 'ASSIST_ULTIMO'].indexOf(k) < 0; });
+  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO', 'ASSIST_ULTIMO', 'DIRETORIA_ULTIMA'].indexOf(k) < 0; });
 
   function bootstrap(user) {
     var contatos = filtraContatosDoUsuario(user, P.tabela('Contatos'));
@@ -3044,9 +3059,10 @@ function PrumoLogica(P) {
     vendas: 'Você é da equipe de VENDAS: atende quem chega com interesse e conduz até a matrícula.',
     recuperacao: 'Você é da equipe de RECUPERAÇÃO: cuida de quem quase comprou (carrinho, Pix ou cartão recusado), de quem esperava um curso que estreou e de alunos parados. Entende o que travou e ajuda a concluir, sem pressão.',
     suporte: 'Você é da equipe de SUPORTE: resolve problemas de clientes e alunos (acesso, senha, pagamento, certificado, cancelamento, reembolso e reclamações) com calma, rapidez e empatia.',
-    consultor: 'Você é CONSULTORA da BRASA: domina o método ensinado nos cursos e ajuda o aluno a aplicar no caso dele, de forma prática, como uma mentora.'
+    consultor: 'Você é CONSULTORA da BRASA: domina o método ensinado nos cursos e ajuda o aluno a aplicar no caso dele, de forma prática, como uma mentora.',
+    sucesso: 'Você é do SUCESSO DO CLIENTE: acompanha a jornada de quem comprou, quer saber como está a experiência e se a pessoa está tendo resultado, e transforma o que ouve em melhorias.'
   };
-  IA.NOMES_PAPEIS = { vendas: 'vendas', recuperacao: 'recuperação', suporte: 'suporte', consultor: 'consultoria' };
+  IA.NOMES_PAPEIS = { vendas: 'vendas', recuperacao: 'recuperação', suporte: 'suporte', consultor: 'consultoria', sucesso: 'sucesso do cliente' };
   IA.INSTRUCOES = {
     suporte: [
       'COMO VOCÊ RESOLVE',
@@ -3061,14 +3077,27 @@ function PrumoLogica(P) {
       '- Antes de responder qualquer dúvida de conteúdo, use buscar_nas_aulas. Baseie a resposta no que as aulas ensinam e cite a aula (ex.: "na aula T1:E3 ...").',
       '- Se as aulas não cobrirem o assunto, diga isso com honestidade e dê uma orientação sua, deixando claro que é uma sugestão.',
       '- Faça perguntas sobre o caso da pessoa e responda com passos práticos, um de cada vez. Celebre o progresso. Use consultar_cliente para ver os cursos e o progresso do aluno.',
-      '- Se fizer sentido, indique a próxima aula ou o próximo curso. Acesso, pagamento ou cancelamento: transfira para suporte.'
-    ].join('\n')
+      '- Se fizer sentido, indique a próxima aula ou o próximo curso. Acesso, pagamento ou cancelamento: transfira para suporte.',
+      '- Se perceber uma falha ou lacuna no conteúdo, use sugerir_melhoria.'
+    ].join('\n'),
+    sucesso: [
+      'COMO VOCÊ ACOMPANHA',
+      '- Quer saber, com uma pergunta por vez e sem cara de questionário: se a pessoa conseguiu acessar, se travou em algo, se o conteúdo é o que esperava, o que sentiu falta, se concluiu, o que achou e como o conhecimento ajudou na vida ou no negócio dela.',
+      '- Escute de verdade e aprofunde ("me conta mais"). Agradeça cada resposta.',
+      '- Registre o que ouvir com registrar_feedback assim que a pessoa responder (pode chamar de novo para completar).',
+      '- Problema, falta ou ideia (no curso, na plataforma, no atendimento ou no preço): use sugerir_melhoria com um título curto e claro.',
+      '- Ajude no que for preciso: dúvida de conteúdo, use buscar_nas_aulas ou transfira para consultoria; acesso ou pagamento, transfira para suporte; quer comprar outro curso, transfira para vendas.',
+      '- A nota de 0 a 10 ("de 0 a 10, quanto você recomendaria a BRASA para um amigo?") só quando a nota do sistema pedir.',
+      '- Se a pessoa elogiar ou contar um resultado, pergunte se pode usar como depoimento. Marque depoimento_ok só com um sim claro.',
+      '- Não venda e não insista. Se a pessoa não quiser conversar, agradeça e encerre.'
+    ].join('\n'),
+    suporte_extra: ''
   };
   /** Ordem de preferência das equipes para quem chega por um canal. */
   IA.preferencia = function (canal, c) {
-    if (canal === 'aluno') return ['consultor', 'suporte', 'vendas'];
+    if (canal === 'aluno') return ['consultor', 'suporte', 'sucesso', 'vendas'];
     if (c && (c.status === 'cliente' || U.tags(c.tags).indexOf('Aluno') >= 0)) return ['suporte', 'consultor', 'vendas', 'recuperacao'];
-    return ['vendas', 'recuperacao', 'suporte', 'consultor'];
+    return ['vendas', 'recuperacao', 'suporte', 'consultor', 'sucesso'];
   };
   IA.promptFixo = function (ag) {
     var b = IA.base(), marca = b.brand || cfg().NOME;
@@ -3157,8 +3186,8 @@ function PrumoLogica(P) {
   ];
 
   IA.FERRAMENTAS.push(
-    { name: 'transferir', description: 'Passa a conversa para outra pessoa da equipe IA (vendas, recuperacao, suporte ou consultor) quando o assunto é da área dela. Depois diga à pessoa, numa frase, quem vai continuar.',
-      input_schema: { type: 'object', properties: { equipe: { type: 'string', enum: ['vendas', 'recuperacao', 'suporte', 'consultor'] }, resumo: { type: 'string', description: 'o que a pessoa precisa, em 1 a 3 frases' } }, required: ['equipe', 'resumo'] } },
+    { name: 'transferir', description: 'Passa a conversa para outra pessoa da equipe IA (vendas, recuperacao, suporte, consultor ou sucesso) quando o assunto é da área dela. Depois diga à pessoa, numa frase, quem vai continuar.',
+      input_schema: { type: 'object', properties: { equipe: { type: 'string', enum: ['vendas', 'recuperacao', 'suporte', 'consultor', 'sucesso'] }, resumo: { type: 'string', description: 'o que a pessoa precisa, em 1 a 3 frases' } }, required: ['equipe', 'resumo'] } },
     { name: 'pedir_aprovacao', description: 'Pede a uma pessoa da equipe para aprovar uma exceção (prazo, desconto acima do seu limite, troca de curso, reembolso fora da garantia). Quando decidirem, a mensagem certa sai sozinha para o cliente.',
       input_schema: { type: 'object', properties: { titulo: { type: 'string' }, descricao: { type: 'string', description: 'o pedido e o motivo' }, mensagem_se_aprovado: { type: 'string' }, mensagem_se_recusado: { type: 'string' } }, required: ['titulo', 'descricao', 'mensagem_se_aprovado', 'mensagem_se_recusado'] } },
     { name: 'consultar_cliente', description: 'Mostra a conta da pessoa na BRASA: situação, cursos com progresso e pedidos (com garantia). Por segurança, só funciona para quem fala pela área do aluno, pelo WhatsApp ou e-mail cadastrados.',
@@ -3170,12 +3199,24 @@ function PrumoLogica(P) {
     { name: 'buscar_nas_aulas', description: 'Procura no conteúdo das aulas da BRASA (títulos, descrições e texto das aulas). Use antes de responder dúvidas de conteúdo.',
       input_schema: { type: 'object', properties: { pergunta: { type: 'string', description: 'palavras-chave do assunto' }, curso: { type: 'string', description: 'slug ou nome do curso (opcional)' } }, required: ['pergunta'] } }
   );
+  IA.FERRAMENTAS.push(
+    { name: 'registrar_feedback', description: 'Guarda o que a pessoa contou sobre a experiência. Chame de novo para completar. Campos vazios não apagam o que já foi registrado.',
+      input_schema: { type: 'object', properties: { curso: { type: 'string' }, momento: { type: 'string', enum: ['boas_vindas', 'metade', 'conclusao', 'nps', 'parado', 'espontaneo'] },
+        nps: { type: 'integer', description: 'nota de 0 a 10, só se a pessoa deu' }, sentimento: { type: 'string', enum: ['positivo', 'neutro', 'negativo'] },
+        travou: { type: 'string', description: 'onde ou por que travou' }, esperava: { type: 'string', description: 'se o conteúdo foi o que esperava e o que esperava' }, faltou: { type: 'string', description: 'o que sentiu falta' },
+        ajudou: { type: 'string', description: 'como o conhecimento ajudou, resultados' }, comentario: { type: 'string' }, depoimento: { type: 'string', description: 'texto do depoimento nas palavras da pessoa' }, depoimento_ok: { type: 'boolean', description: 'true só com autorização clara para usar como depoimento' } }, required: ['momento'] } },
+    { name: 'sugerir_melhoria', description: 'Registra um problema ou ideia de melhoria para a equipe (curso, plataforma, atendimento, preço). Se já existir uma parecida, soma um voto.',
+      input_schema: { type: 'object', properties: { area: { type: 'string', enum: ['curso', 'plataforma', 'atendimento', 'preco', 'outro'] }, curso: { type: 'string' }, titulo: { type: 'string', description: 'curto, ex.: "Aula 3 sem exemplo prático"' }, descricao: { type: 'string' } }, required: ['area', 'titulo', 'descricao'] } },
+    { name: 'pedir_nota_fiscal', description: 'Registra o pedido de nota fiscal da compra da pessoa (a equipe emite e o cliente recebe por aqui). Peça CPF ou CNPJ e o nome que deve sair na nota.',
+      input_schema: { type: 'object', properties: { documento: { type: 'string', description: 'CPF ou CNPJ' }, nome: { type: 'string', description: 'nome ou razão social' }, pedido_id: { type: 'string', description: 'opcional, de consultar_cliente' } }, required: ['documento', 'nome'] } }
+  );
   IA.KIT = {
     comum: ['passar_para_humano', 'anotar', 'transferir', 'agendar_retorno', 'pedir_aprovacao', 'detalhes_do_curso'],
     vendas: ['link_de_compra', 'mover_no_funil'],
     recuperacao: ['link_de_compra', 'mover_no_funil', 'consultar_cliente'],
-    suporte: ['consultar_cliente', 'reenviar_acesso', 'pedir_reembolso', 'link_de_compra'],
-    consultor: ['buscar_nas_aulas', 'consultar_cliente']
+    suporte: ['consultar_cliente', 'reenviar_acesso', 'pedir_reembolso', 'link_de_compra', 'sugerir_melhoria', 'pedir_nota_fiscal'],
+    consultor: ['buscar_nas_aulas', 'consultar_cliente', 'sugerir_melhoria'],
+    sucesso: ['registrar_feedback', 'sugerir_melhoria', 'consultar_cliente', 'buscar_nas_aulas']
   };
   IA.ferramentasDe = function (ag) {
     var kit = IA.KIT.comum.concat(IA.KIT[ag.papel] || IA.KIT.vendas);
@@ -3238,6 +3279,18 @@ function PrumoLogica(P) {
         descricao: 'Motivo: ' + U.cap(inp.motivo, 600) + '\nPedido ' + o.id + ', pago em ' + (o.paid || o.date) + ', há ' + o.days_since_payment + ' dias. ' + (o.in_guarantee ? 'Dentro da garantia de ' + o.guarantee_days + ' dias.' : 'FORA da garantia de ' + o.guarantee_days + ' dias.'),
         dados: { pedido_id: o.id, email: cli.email, valor: o.amount, curso: o.course, dentro_garantia: !!o.in_guarantee } });
       return { ok: true, dentro_da_garantia: !!o.in_guarantee, instrucao: 'Avise que o pedido de reembolso foi registrado e que a equipe confirma em breve. Depois de aprovado, no Pix o valor volta em até 1 dia útil; no cartão, o estorno aparece em até 2 faturas.' };
+    }
+    if (nome === 'registrar_feedback') return ctx.teste ? { ok: true, simulado: true } : SUC.feedback(c, ag, inp);
+    if (nome === 'sugerir_melhoria') return ctx.teste ? { ok: true, simulado: true } : SUC.melhoria(inp, 'IA: ' + ag.nome + ' (' + (c.nome || '') + ')');
+    if (nome === 'pedir_nota_fiscal') {
+      var doc = U.dig(inp.documento);
+      if (!NF.docValido(doc)) return { erro: 'CPF ou CNPJ inválido. Confirme com a pessoa.' };
+      var cl2 = ctx.cliente || IA.executarExtra('consultar_cliente', {}, ctx);
+      var pg = cl2 && cl2.orders ? cl2.orders.filter(function (x) { return x.status === 'approved' && (!inp.pedido_id || x.id === inp.pedido_id); })[0] : null;
+      if (!pg) return { erro: 'Não achei compra paga desta pessoa. Use consultar_cliente ou passe para humano.' };
+      if (ctx.teste) return { ok: true, simulado: true };
+      var n = NF.criar(c, { pedido_id: pg.id, curso: pg.course, valor: pg.amount, nome: inp.nome, doc: doc, email: cl2.email || c.email, motivo: 'Cliente pediu' });
+      return { ok: true, ja_existia: !!n.ja, instrucao: 'Diga que a nota fiscal foi pedida e chega por aqui em até 2 dias úteis.' };
     }
     if (nome === 'buscar_nas_aulas') {
       var r = BR.chamar('bridgeSearch', { q: U.cap(inp.pergunta, 200), course: U.str(inp.curso) });
@@ -3362,6 +3415,7 @@ function PrumoLogica(P) {
     hist(c.id, '', IA.usuarioDe(ag), 'ia', 'Passou para ' + (nomeUsuario(alvo) || 'a equipe') + ': ' + motivo);
     P.atualizar('Agentes', ag.id, { passadas: String(U.num(ag.passadas) + 1) });
     saida('ia.humano', { contato: contatoPublico(c), motivo: motivo, resumo: resumo });
+    try { TR.casoGrave(c, motivo, resumo); } catch (eJ) { /* segue */ }
     return alvo;
   };
 
@@ -3639,7 +3693,7 @@ function PrumoLogica(P) {
     aluno_parado: 'primeiro contato com um aluno que parou de estudar ({situacao}). Puxe conversa leve para entender o que travou e ajudar a retomar. Nada de venda agora.',
     lista_espera: 'o curso {curso} que a pessoa esperava (lista de espera) acabou de abrir. Avise com entusiasmo contido e ofereça tirar dúvidas. Link: {link_curso}.'
   };
-  IA.EQUIPE_EVENTO = { carrinho_abandonado: 'recuperacao|vendas', pix_expirado: 'recuperacao|vendas', recusado: 'recuperacao|vendas', aluno_parado: 'recuperacao|consultor|suporte', lista_espera: 'recuperacao|vendas' };
+  IA.EQUIPE_EVENTO = { carrinho_abandonado: 'recuperacao|vendas', pix_expirado: 'recuperacao|vendas', recusado: 'recuperacao|vendas', aluno_parado: 'sucesso|recuperacao|consultor|suporte', lista_espera: 'recuperacao|vendas' };
   IA.aoEvento = function (c, ev) {
     if (!IA.ativa()) return;
     if (ev.evento === 'compra_aprovada' || ev.evento === 'reembolso') { // comprou: para o acompanhamento de recuperação
@@ -3720,7 +3774,9 @@ function PrumoLogica(P) {
       tarefas_atrasadas: P.tabela('Tarefas').filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em < agora; }).length,
       negocios_abertos: negs.filter(function (n) { return n.status === 'aberto'; }).length,
       equipe_ia: IA.lista().map(function (a) { return a.nome + ' (' + (IA.NOMES_PAPEIS[a.papel] || 'vendas') + ', ' + (a.ativo === 'SIM' ? 'ativa' : 'pausada') + ')'; }),
-      ia_ligada: IA.ativa(), qtd_agentes_ia: Object.keys(ags).length
+      ia_ligada: IA.ativa(), qtd_agentes_ia: Object.keys(ags).length,
+      financeiro: (function () { var f = FIN2.painel(); delete f.config; return f; })(),
+      sucesso: (function () { var p = SUC.painel(); return { nps_90d: p.nps, feedbacks_no_periodo: P.tabela('Feedbacks').filter(function (f) { return dentro(f.criado_em); }).map(function (f) { return [f.curso, f.momento, f.nps ? 'nota ' + f.nps : '', f.sentimento, f.travou, f.faltou, f.ajudou].filter(Boolean).join(' | '); }).slice(0, 20), melhorias_top: p.melhorias.filter(function (m) { return m.status === 'nova' || m.status === 'planejada'; }).slice(0, 5).map(function (m) { return m.titulo + ' (' + m.votos + ' votos)'; }) }; })()
     };
   };
   IA.ASSIST_SISTEMA = 'Você é a assistente pessoal do dono da BRASA (plataforma de cursos online), dentro do BRASA CRM. Responda em português do Brasil, direto, como uma chefe de gabinete: números primeiro, depois o que precisa de atenção e o que você recomenda. Sem textão, sem markdown pesado (use no máximo listas curtas com hífen). Use as ferramentas para buscar os números; nunca invente dados. Você só lê: não envia mensagens nem muda nada.';
@@ -3791,6 +3847,385 @@ function PrumoLogica(P) {
       hist('', '', null, 'assistente', 'Resumo diário enviado' + (envios.length ? ' por ' + envios.join(' e ') : ' (sem destino configurado)'));
     });
     return r;
+  };
+
+  /* ================================================ Sucesso do Cliente */
+  var SUC = {};
+  SUC.NOTAS = {
+    boas_vindas: 'check-in de boas-vindas do Sucesso do Cliente: a pessoa começou {curso} há poucos dias. Apresente-se, pergunte como foi o começo e se conseguiu acessar tudo direitinho. Uma pergunta só, leve.',
+    experiencia: 'check-in de experiência: a pessoa está com {curso} há alguns dias. Pergunte como está sendo, se o conteúdo é o que esperava e se travou em alguma parte. Uma pergunta só.',
+    metade: 'a pessoa chegou na metade de {curso} ({situacao}). Parabenize de forma genuína e pergunte o que está achando até aqui e se já conseguiu aplicar alguma coisa.',
+    conclusao: 'a pessoa concluiu {curso}. Parabenize, pergunte o que achou e como o conhecimento ajudou. Depois, numa próxima mensagem, peça a nota de 0 a 10 e o que sentiu falta. Se o retorno for bom, peça permissão para usar como depoimento.',
+    nps: 'acompanhamento de 30 dias: pergunte como está a jornada com {curso} e peça a nota de 0 a 10 de quanto recomendaria a BRASA para um amigo, e o porquê.'
+  };
+  SUC.agente = function (canal, c) { return IA.escolher(canal, c, 'sucesso'); };
+  SUC.agendar = function (c, tipo, curso, minutos) {
+    if (P.tabela('Acompanhamentos').some(function (a) { return a.contato_id === c.id && a.tipo === tipo && a.curso === curso && a.status !== 'cancelado'; })) return null;
+    var a = { id: P.id('AC'), contato_id: c.id, tipo: tipo, curso: U.cap(curso, 150), nota: '', quando: U.somaTempo(P.agora(), minutos), status: 'pendente', tentativas: '0', criado_em: P.agora(), feito_em: '' };
+    P.inserir('Acompanhamentos', a);
+    return a;
+  };
+  SUC.aoEvento = function (c, ev) {
+    if (cfg().SUCESSO_ATIVO === 'NAO' || !IA.lista().some(function (a) { return a.ativo === 'SIM' && a.papel === 'sucesso'; })) return;
+    var curso = ev.produto || camposDe(c).curso || '';
+    if (ev.evento === 'reembolso') {
+      P.tabela('Acompanhamentos').filter(function (a) { return a.contato_id === c.id && a.status === 'pendente'; }).forEach(function (a) { P.atualizar('Acompanhamentos', a.id, { status: 'cancelado' }); });
+      return;
+    }
+    if (ev.evento === 'compra_aprovada' || ev.evento === 'cadastro') {
+      var dias = U.lista(cfg().SUCESSO_DIAS).map(U.num).filter(function (n) { return n > 0; }), tipos = ['boas_vindas', 'experiencia', 'nps'];
+      if (ev.evento === 'cadastro') dias = dias.slice(0, 1); // curso grátis: só as boas-vindas
+      dias.slice(0, 3).forEach(function (d, i) { SUC.agendar(c, tipos[i], curso, d * 1440); });
+    }
+    if (ev.evento === 'progresso_metade') SUC.agendar(c, 'metade', curso, 30);
+    if (ev.evento === 'curso_concluido') SUC.agendar(c, 'conclusao', curso, 60);
+  };
+  /** Transforma acompanhamentos vencidos em conversas da equipe de sucesso (só com o contato livre e no horário). */
+  SUC.processar = function () {
+    if (!IA.ativa()) return 0;
+    var agora = P.agora(), n = 0;
+    P.tabela('Acompanhamentos').filter(function (a) { return a.status === 'pendente' && a.quando <= agora; }).slice(0, 10).forEach(function (a) {
+      var c = contatoPorId(a.contato_id);
+      var fim = function (st, motivo) { P.atualizar('Acompanhamentos', a.id, { status: st, feito_em: P.agora(), nota: U.cap(motivo || '', 300) }); };
+      if (!c || c.optout === 'SIM') return fim('cancelado', 'Contato saiu da lista');
+      if (P.tabela('Acompanhamentos').some(function (x) { return x.contato_id === c.id && x.status === 'feito' && x.feito_em > U.somaTempo(agora, -1440); })) { // no máximo um por dia
+        P.atualizar('Acompanhamentos', a.id, { quando: U.somaTempo(agora, 1440) }); return;
+      }
+      var cp = camposDe(c), canal = '';
+      if (c.telefone && WA.temApi() && !(usaMeta() && !janelaAberta(c) && !gratisAgora(c))) canal = 'whatsapp';
+      else if (c.email && IA.canalOk('aluno') && (c.status === 'cliente' || cp.pedido_brasa || c.origem === 'BRASA')) canal = 'aluno';
+      if (!canal) return fim('cancelado', 'Sem canal para chamar (WhatsApp com API ou área do aluno)');
+      var ag = SUC.agente(canal, c);
+      if (!ag) return fim('cancelado', 'Sem agente de sucesso ativo neste canal');
+      var ocupado = c.ia_estado === 'humano' || roboPausado(c) || (c.ultima_msg_em && c.ultima_msg_em > U.somaTempo(agora, -360)) || (c.ia_acordar_em && c.ia_acordar_em > agora) || !dentroDoHorario(agora);
+      if (ocupado) {
+        var t = U.num(a.tentativas) + 1;
+        if (t > 6) return fim('cancelado', 'Contato sempre ocupado');
+        P.atualizar('Acompanhamentos', a.id, { quando: U.somaTempo(agora, 360), tentativas: String(t) }); return;
+      }
+      cp.ia_nota = montarTexto(SUC.NOTAS[a.tipo] || SUC.NOTAS.experiencia, c, null, { curso: a.curso || cp.curso || 'o curso', situacao: cp.situacao || '' });
+      cp.ia_proativo = 'SIM';
+      var mud = { ia_agente_id: ag.id, ia_estado: 'retorno', ia_acordar_em: agora, campos: JSON.stringify(cp) };
+      if (canal === 'aluno' && c.canal !== 'aluno') mud.canal = 'aluno';
+      if (c.ia_agente_id !== ag.id) P.atualizar('Agentes', ag.id, { conversas: String(U.num(ag.conversas) + 1) });
+      P.atualizar('Contatos', c.id, mud);
+      hist(c.id, '', IA.usuarioDe(ag), 'sucesso', ag.nome + ' vai conversar com o cliente (' + a.tipo.replace('_', ' ') + (a.curso ? ', ' + a.curso : '') + ')');
+      fim('feito');
+      n++;
+    });
+    return n;
+  };
+  SUC.feedback = function (c, ag, inp) {
+    var momento = U.str(inp.momento) || 'espontaneo', curso = U.cap(inp.curso || camposDe(c).curso || '', 150);
+    var limite = U.somaTempo(P.agora(), -7 * 1440);
+    var f = P.tabela('Feedbacks').filter(function (x) { return x.contato_id === c.id && x.momento === momento && x.curso === curso && x.criado_em >= limite; })[0];
+    var d = {};
+    ['travou', 'esperava', 'faltou', 'ajudou', 'comentario', 'depoimento'].forEach(function (k) { if (U.str(inp[k]).trim()) d[k] = U.cap(inp[k], 1500); });
+    if (['positivo', 'neutro', 'negativo'].indexOf(inp.sentimento) >= 0) d.sentimento = inp.sentimento;
+    if (inp.nps !== undefined && inp.nps !== null && inp.nps !== '' && U.num(inp.nps) >= 0 && U.num(inp.nps) <= 10) d.nps = String(Math.round(U.num(inp.nps)));
+    if (inp.depoimento_ok === true) d.depoimento_ok = 'SIM';
+    d.atualizado_em = P.agora();
+    if (f) P.atualizar('Feedbacks', f.id, d);
+    else {
+      f = Object.assign({ id: P.id('FB'), contato_id: c.id, agente_id: ag ? ag.id : '', curso: curso, momento: momento, nps: '', sentimento: '', travou: '', esperava: '', faltou: '', ajudou: '', comentario: '', depoimento: '', depoimento_ok: 'NAO', criado_em: P.agora() }, d);
+      P.inserir('Feedbacks', f);
+    }
+    if (d.nps) { var nn = U.num(d.nps); addTag(c, nn >= 9 ? 'NPS: promotor' : nn >= 7 ? 'NPS: neutro' : 'NPS: detrator', null); }
+    hist(c.id, '', ag ? IA.usuarioDe(ag) : null, 'feedback', [momento, d.nps ? 'nota ' + d.nps : '', d.sentimento || '', d.travou ? 'travou: ' + d.travou : '', d.faltou ? 'faltou: ' + d.faltou : ''].filter(Boolean).join(' | '));
+    return { ok: true };
+  };
+  SUC.melhoria = function (inp, origem) {
+    var area = ['curso', 'plataforma', 'atendimento', 'preco', 'outro'].indexOf(inp.area) >= 0 ? inp.area : 'outro';
+    var titulo = U.cap(U.str(inp.titulo).trim(), 140), curso = U.cap(inp.curso, 150);
+    if (!titulo) return { erro: 'Dê um título curto à melhoria.' };
+    var palavras = function (t) { return U.norm(t).split(/[^a-z0-9]+/).filter(function (w) { return w.length > 3; }); };
+    var pt = palavras(titulo);
+    var igual = P.tabela('Melhorias').filter(function (m) {
+      if (m.area !== area || U.norm(m.curso) !== U.norm(curso) || m.status === 'feita' || m.status === 'descartada') return false;
+      var pm = palavras(m.titulo), comum = pt.filter(function (w) { return pm.indexOf(w) >= 0; }).length;
+      return U.norm(m.titulo) === U.norm(titulo) || (pt.length && comum / Math.max(pt.length, pm.length) >= 0.6);
+    })[0];
+    if (igual) {
+      P.atualizar('Melhorias', igual.id, { votos: String(U.num(igual.votos) + 1), descricao: U.cap(igual.descricao + '\n- ' + U.cap(inp.descricao, 400), 4000), atualizado_em: P.agora() });
+      return { ok: true, votos: U.num(igual.votos) + 1, ja_existia: true };
+    }
+    P.inserir('Melhorias', { id: P.id('ME'), area: area, curso: curso, titulo: titulo, descricao: '- ' + U.cap(inp.descricao, 1500), votos: '1', origem: U.cap(origem, 150), status: 'nova', criado_em: P.agora(), atualizado_em: P.agora() });
+    return { ok: true, votos: 1 };
+  };
+  SUC.painel = function () {
+    var fs2 = P.tabela('Feedbacks'), d90 = U.somaTempo(P.agora(), -90 * 1440), cs = {};
+    P.tabela('Contatos').forEach(function (c) { cs[c.id] = c.nome; });
+    var notas = fs2.filter(function (f) { return f.nps !== '' && f.criado_em >= d90; }).map(function (f) { return U.num(f.nps); });
+    var prom = notas.filter(function (n) { return n >= 9; }).length, det = notas.filter(function (n) { return n <= 6; }).length;
+    var porCurso = {};
+    fs2.forEach(function (f) { var k = f.curso || 'Sem curso'; var p = porCurso[k] = porCurso[k] || { curso: k, feedbacks: 0, notas: [], negativos: 0 }; p.feedbacks++; if (f.nps !== '') p.notas.push(U.num(f.nps)); if (f.sentimento === 'negativo') p.negativos++; });
+    return {
+      nps: notas.length ? Math.round((prom - det) / notas.length * 100) : null, respostas_nps: notas.length, promotores: prom, detratores: det,
+      feedbacks: fs2.slice().sort(function (a, b) { return a.atualizado_em < b.atualizado_em ? 1 : -1; }).slice(0, 60).map(function (f) { var o = Object.assign({}, f); o.contato_nome = cs[f.contato_id] || ''; return o; }),
+      cursos: Object.keys(porCurso).map(function (k) { var p = porCurso[k]; p.media = p.notas.length ? Math.round(p.notas.reduce(function (s, n) { return s + n; }, 0) / p.notas.length * 10) / 10 : null; delete p.notas; return p; }),
+      melhorias: P.tabela('Melhorias').slice().sort(function (a, b) { return (a.status === 'nova' || a.status === 'planejada' ? 0 : 1) - (b.status === 'nova' || b.status === 'planejada' ? 0 : 1) || U.num(b.votos) - U.num(a.votos); }),
+      depoimentos: fs2.filter(function (f) { return f.depoimento_ok === 'SIM' && (f.depoimento || f.ajudou); }).map(function (f) { return { nome: cs[f.contato_id] || '', curso: f.curso, texto: f.depoimento || f.ajudou, em: f.atualizado_em }; }),
+      agendados: P.tabela('Acompanhamentos').filter(function (a) { return a.status === 'pendente'; }).length,
+      config: { SUCESSO_ATIVO: cfg().SUCESSO_ATIVO, SUCESSO_DIAS: cfg().SUCESSO_DIAS }, tem_agente: IA.lista().some(function (a) { return a.ativo === 'SIM' && a.papel === 'sucesso'; })
+    };
+  };
+
+  /* ===================================================== Notas fiscais */
+  // MEI: nota obrigatória para empresa (CNPJ) e quando o cliente pede; emissão no Emissor Nacional (gov.br), grátis.
+  var NF = {};
+  NF.EMISSOR = 'https://www.nfse.gov.br/EmissorNacional';
+  NF.docValido = function (d) {
+    d = U.dig(d);
+    if (d.length === 11) {
+      if (/^(\d)\1+$/.test(d)) return false;
+      for (var t = 9; t < 11; t++) { var s1 = 0; for (var i = 0; i < t; i++) s1 += Number(d[i]) * (t + 1 - i); if (Number(d[t]) !== ((s1 * 10) % 11) % 10) return false; }
+      return true;
+    }
+    if (d.length === 14) {
+      if (/^(\d)\1+$/.test(d)) return false;
+      var calc = function (n) { var p = n === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2], s2 = 0; for (var j = 0; j < n; j++) s2 += Number(d[j]) * p[j]; var r = s2 % 11; return r < 2 ? 0 : 11 - r; };
+      return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+    }
+    return false;
+  };
+  NF.criar = function (c, o) {
+    var ja = o.pedido_id ? P.tabela('Notas').filter(function (n) { return n.pedido_id === o.pedido_id && n.status !== 'cancelada' && n.status !== 'dispensada'; })[0] : null;
+    if (ja) { if (o.doc && !ja.tomador_doc) P.atualizar('Notas', ja.id, { tomador_doc: o.doc, tomador_nome: U.cap(o.nome, 150) || ja.tomador_nome }); ja.ja = true; return ja; }
+    var n = { id: P.id('NF'), contato_id: c ? c.id : '', pedido_id: U.str(o.pedido_id), curso: U.cap(o.curso, 150), valor: String(U.num(o.valor)), tomador_nome: U.cap(o.nome || (c && c.nome), 150), tomador_doc: U.dig(o.doc),
+      tomador_email: U.str(o.email || (c && c.email)).toLowerCase(), motivo: U.cap(o.motivo, 150), status: 'pendente', numero: '', link: '', criado_em: P.agora(), emitida_em: '', emitida_por: '' };
+    P.inserir('Notas', n);
+    if (c) hist(c.id, '', null, 'nota_fiscal', 'Nota fiscal a emitir: ' + n.curso + ' (' + FIN.brl(n.valor) + ') - ' + n.motivo);
+    return n;
+  };
+  NF.aoEvento = function (c, ev) {
+    var b = ev.brasa || {}, doc = U.dig(b.documento || camposDe(c).documento);
+    if (ev.evento === 'compra_aprovada' && ev.valor > 0) {
+      var pj = doc.length === 14;
+      if (pj || cfg().NF_EMITIR === 'todas') NF.criar(c, { pedido_id: b.pedido_id, curso: ev.produto, valor: ev.valor, nome: c.nome, doc: doc, email: c.email, motivo: pj ? 'Cliente com CNPJ: obrigatória' : 'Emitir para todas as vendas' });
+    }
+    if (ev.evento === 'reembolso') {
+      P.tabela('Notas').filter(function (n) { return n.contato_id === c.id && (!b.pedido_id || n.pedido_id === b.pedido_id) && (n.status === 'pendente' || n.status === 'emitida'); }).forEach(function (n) {
+        if (n.status === 'pendente') P.atualizar('Notas', n.id, { status: 'cancelada' });
+        else {
+          P.atualizar('Notas', n.id, { status: 'cancelar' });
+          P.inserir('Tarefas', { id: P.id('T'), titulo: 'Cancelar a nota fiscal ' + (n.numero || '') + ' de ' + c.nome + ' (reembolso)', tipo: 'outro', contato_id: c.id, negocio_id: '', responsavel_id: '', vence_em: U.somaTempo(P.agora(), 1440), feita: 'NAO', notas: 'Cancele no Emissor Nacional: ' + NF.EMISSOR, criado_em: P.agora() });
+        }
+      });
+    }
+  };
+  NF.descricao = function (n) { return montarTexto(cfg().NF_DESCRICAO || 'Curso online: {curso}', contatoPorId(n.contato_id) || {}, null, { curso: n.curso }); };
+  NF.emitida = function (n, numero, link, user) {
+    var mud = { status: 'emitida', numero: U.cap(numero, 60), link: U.cap(link, 500), emitida_em: P.agora(), emitida_por: user.nome };
+    P.atualizar('Notas', n.id, mud);
+    var c = contatoPorId(n.contato_id), aviso = '';
+    if (c && (mud.link || mud.numero)) {
+      var texto = montarTexto('Oi, {primeiro_nome}! Sua nota fiscal de ' + n.curso + ' foi emitida' + (mud.numero ? ' (número ' + mud.numero + ')' : '') + '.' + (mud.link ? ' Você pode ver e baixar aqui: ' + mud.link : ''), c, user);
+      try { enviarParaContato(c, texto, { user: user, origem: 'manual' }); aviso = 'enviada ao cliente'; }
+      catch (e) {
+        if (n.tomador_email && P.email && P.email.gmail) { try { P.email.gmail({ para: n.tomador_email, assunto: 'Sua nota fiscal - ' + n.curso, texto: texto, html: '<p style="font-family:sans-serif">' + EM.esc(texto) + '</p>', nome: cfg().NOME }); aviso = 'enviada por e-mail'; } catch (e2) { aviso = 'não deu para enviar: ' + e2.message; } }
+        else aviso = 'não deu para enviar: ' + e.message;
+      }
+      hist(c.id, '', user, 'nota_fiscal', 'Nota fiscal emitida ' + mud.numero + ' (' + aviso + ')');
+    }
+    return Object.assign(n, mud, { aviso: aviso });
+  };
+
+  /* ======================================================== Financeiro */
+  var FIN2 = {};
+  FIN2.receita = function (de, ate) {
+    var dentro = function (iso) { var d = U.str(iso).slice(0, 10); return d && d >= de && d <= ate; }, bruto = 0, reemb = 0;
+    P.tabela('Cobrancas').forEach(function (x) {
+      if ((x.status === 'paga' || x.status === 'reembolsada') && dentro(x.pago_em)) bruto += U.num(x.valor);
+      if (x.status === 'reembolsada' && dentro(x.reembolsado_em)) reemb += U.num(x.reembolso_valor) || U.num(x.valor);
+    });
+    return Math.round((bruto - reemb) * 100) / 100;
+  };
+  FIN2.painel = function () {
+    var k = cfg(), hoje = P.agora().slice(0, 10), mes = hoje.slice(0, 7), ano = hoje.slice(0, 4);
+    var rMes = FIN2.receita(mes + '-01', hoje), rAno = FIN2.receita(ano + '-01-01', hoje);
+    var diaAno = Math.max(1, Math.round((new Date(hoje + 'T12:00:00') - new Date(ano + '-01-01T12:00:00')) / 86400000) + 1);
+    var teto = U.num(k.MEI_LIMITE) || 81000, meta = U.num(k.META_MES);
+    var diasMes = new Date(Number(ano), Number(hoje.slice(5, 7)), 0).getDate(), diaMes = Number(hoje.slice(8, 10));
+    return {
+      receita_mes: rMes, meta_mes: meta, pct_meta: meta ? Math.round(rMes / meta * 100) : null, projecao_mes: Math.round(rMes / diaMes * diasMes),
+      receita_ano: rAno, teto_mei: teto, pct_teto: Math.round(rAno / teto * 100), projecao_ano: Math.round(rAno / diaAno * 365),
+      das_pago: k.DAS_PAGO === mes, das_vence: mes + '-20', das_atrasado: k.DAS_PAGO !== mes && diaMes > 20,
+      notas_pendentes: P.tabela('Notas').filter(function (n) { return n.status === 'pendente' || n.status === 'cancelar'; }).length,
+      config: { META_MES: k.META_MES, MEI_LIMITE: k.MEI_LIMITE, NF_EMITIR: k.NF_EMITIR, NF_DESCRICAO: k.NF_DESCRICAO, DAS_PAGO: k.DAS_PAGO }
+    };
+  };
+
+  /* ============================================ Jurídico e Diretoria */
+  var TR = {};
+  TR.criar = function (time, tipo, entrada) {
+    var t = { id: P.id('TR'), time: time, tipo: tipo, entrada: JSON.stringify(entrada || {}), status: 'pendente', documento_id: '', erro: '', tentativas: '0', criado_em: P.agora(), feito_em: '' };
+    P.inserir('Trabalhos', t);
+    return t;
+  };
+  TR.JURIDICO = 'Você é a assessoria jurídica interna da BRASA, uma plataforma brasileira de cursos online (infoprodutos) de um MEI. Escreve rascunhos claros, em português do Brasil, linguagem simples e profissional. ' +
+    'Base: Código de Defesa do Consumidor (incluindo o direito de arrependimento de 7 dias do art. 49 para compras pela internet), LGPD, Marco Civil da Internet e boas práticas de infoprodutos. ' +
+    'A primeira linha é sempre: RASCUNHO PARA REVISÃO DE UM ADVOGADO. Use os dados da empresa que foram fornecidos; o que não souber (CNPJ, endereço, foro), deixe como [PREENCHER]. Nunca invente lei, artigo ou jurisprudência; se não tiver certeza, diga que precisa ser conferido. ' +
+    'Seja objetivo: no máximo cerca de 1.200 palavras. Formate com títulos simples em linhas próprias e listas com hífen.';
+  TR.DIRETORIA = 'Você é a diretoria executiva da BRASA (plataforma de cursos online de um MEI) e escreve o relatório semanal para o dono. Use as ferramentas para buscar os números; nunca invente dados. ' +
+    'Estrutura: 1) Resultado da semana (vendas, receita, comparação com a semana anterior, meta do mês); 2) Financeiro (teto do MEI, DAS, notas a emitir); 3) Clientes (NPS, feedbacks, principais travas e faltas); 4) Equipe IA (desempenho, passagens para humano, erros); 5) Melhorias mais pedidas; 6) Decisões que precisam do dono (no máximo 5, cada uma com recomendação). ' +
+    'Português do Brasil, direto, no máximo cerca de 600 palavras, títulos simples e listas com hífen.';
+  TR.FERR_DIRETORIA = [
+    { name: 'financeiro', description: 'Receita do mês e do ano, meta, teto do MEI, DAS e notas a emitir.', input_schema: { type: 'object', properties: {} } },
+    { name: 'sucesso_do_cliente', description: 'NPS, feedbacks recentes, médias por curso e melhorias mais pedidas.', input_schema: { type: 'object', properties: {} } }
+  ];
+  TR.ferramenta = function (nome, inp) {
+    if (nome === 'financeiro') return FIN2.painel();
+    if (nome === 'sucesso_do_cliente') { var p = SUC.painel(); return { nps: p.nps, respostas_nps: p.respostas_nps, cursos: p.cursos, feedbacks: p.feedbacks.slice(0, 25), melhorias: p.melhorias.filter(function (m) { return m.status === 'nova' || m.status === 'planejada'; }).slice(0, 15) }; }
+    return IA.assistFerramenta(nome, inp);
+  };
+  TR.empresa = function () {
+    var b = {}; try { b = IA.base(); } catch (e) { b = {}; }
+    return 'Dados da empresa: marca ' + (b.brand || cfg().NOME) + (b.site ? ', site ' + b.site : '') + (b.support_email ? ', e-mail de suporte ' + b.support_email : '') + (b.support_whatsapp ? ', WhatsApp ' + b.support_whatsapp : '') +
+      '. Regime: MEI. Garantia padrão dos cursos: 7 dias (alguns cursos podem ter mais). Pagamentos pelo Mercado Pago (Pix e cartão). Cursos: ' + (b.courses || []).slice(0, 15).map(function (c) { return c.title; }).join(', ') + '.';
+  };
+  /** Roda um trabalho da fila: o Claude é chamado fora da trava; o documento é gravado dentro dela. */
+  TR.processar = function (trava) {
+    var t = trava(function () {
+      cfgMemo = null;
+      if (!IA.ativa()) return null;
+      var x = P.tabela('Trabalhos').filter(function (w) { return w.status === 'pendente'; }).sort(function (a, b) { return a.criado_em < b.criado_em ? -1 : 1; })[0];
+      if (!x) return null;
+      P.atualizar('Trabalhos', x.id, { status: 'rodando', tentativas: String(U.num(x.tentativas) + 1) });
+      return x;
+    });
+    if (!t) return null;
+    var e = U.json(t.entrada, {}) || {}, k = cfg(), modelo = IA.MODELOS[k.IA_MODELO] ? k.IA_MODELO : 'claude-opus-5-5';
+    try {
+      var req, titulo, contato = '';
+      if (t.tipo === 'diretoria.semanal') {
+        titulo = 'Relatório da semana ' + e.de.split('-').reverse().join('/') + ' a ' + e.ate.split('-').reverse().join('/');
+        req = { model: modelo, max_tokens: 6000, output_config: { effort: 'low' }, tools: IA.ASSIST_FERR.concat(TR.FERR_DIRETORIA),
+          system: [{ type: 'text', text: TR.DIRETORIA, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+          messages: [{ role: 'user', content: 'Escreva o relatório da semana de ' + e.de + ' a ' + e.ate + '. Compare com a semana anterior (' + e.de_ant + ' a ' + e.ate_ant + '). Hoje é ' + P.agora().slice(0, 10) + '.' }] };
+      } else if (t.tipo === 'juridico.caso') {
+        titulo = 'Análise jurídica: ' + U.cap(e.nome || 'cliente', 60);
+        contato = e.contato_id || '';
+        var hist2 = P.filtrar('Mensagens', 'contato_id', contato).sort(function (a, b) { return a.criado_em < b.criado_em ? -1 : 1; }).slice(-25).map(function (m) { return (m.direcao === 'in' ? 'Cliente: ' : 'BRASA: ') + U.cap(m.texto, 400); }).join('\n');
+        req = { model: modelo, max_tokens: 5000, output_config: { effort: 'low' }, system: [{ type: 'text', text: TR.JURIDICO }],
+          messages: [{ role: 'user', content: TR.empresa() + '\n\nUm cliente fez uma reclamação que pode ter risco jurídico. Motivo: ' + e.motivo + '. Resumo: ' + e.resumo + '\n\nConversa recente:\n' + hist2 + '\n\nEscreva: 1) avaliação do risco (baixo, médio ou alto) e por quê; 2) o que a lei garante ao cliente neste caso; 3) recomendação de como resolver; 4) uma mensagem pronta, educada e firme, para a equipe enviar ao cliente.' }] };
+      } else {
+        titulo = U.cap(e.tipo_doc || 'Documento', 80);
+        req = { model: modelo, max_tokens: 6000, output_config: { effort: 'low' }, system: [{ type: 'text', text: TR.JURIDICO }],
+          messages: [{ role: 'user', content: TR.empresa() + '\n\nDocumento pedido: ' + (e.tipo_doc || 'documento') + '.\nContexto e instruções do dono: ' + (e.contexto || 'nenhum') }] };
+      }
+      var texto = '', usadas = 0;
+      for (var v = 0; v < 6; v++) {
+        var r = IA.chamar(req);
+        req.messages.push({ role: 'assistant', content: r.content });
+        if (r.stop_reason === 'tool_use') {
+          var bl = r.content.filter(function (x) { return x.type === 'tool_use'; });
+          req.messages.push({ role: 'user', content: trava(function () { return bl.map(function (b) { usadas++; var o; try { o = TR.ferramenta(b.name, b.input || {}); } catch (er) { o = { erro: er.message }; } return { type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(o) }; }); }) });
+          continue;
+        }
+        texto = r.content.filter(function (x) { return x.type === 'text'; }).map(function (x) { return x.text; }).join('\n\n').trim();
+        break;
+      }
+      if (!texto) throw new Error('A IA não devolveu texto.');
+      return trava(function () {
+        var doc = { id: P.id('DC'), time: t.time, tipo: t.tipo, titulo: titulo, conteudo: U.cap(texto, 45000), contato_id: contato, status: 'rascunho', criado_em: P.agora(), atualizado_em: P.agora() };
+        P.inserir('Documentos', doc);
+        P.atualizar('Trabalhos', t.id, { status: 'feito', documento_id: doc.id, feito_em: P.agora(), erro: '' });
+        if (contato) hist(contato, '', null, 'juridico', 'O Jurídico preparou uma análise e uma sugestão de resposta (Escritório > Jurídico)');
+        if (t.tipo === 'diretoria.semanal') {
+          var para = U.str(cfg().ASSIST_EMAIL).trim() || (P.tabela('Usuarios').filter(function (u) { return u.perfil === 'admin' && u.ativo === 'SIM'; })[0] || {}).email;
+          if (para && P.email && P.email.gmail) { try { P.email.gmail({ para: para, assunto: titulo + ' - ' + cfg().NOME, texto: texto, html: '<div style="font-family:sans-serif;white-space:pre-wrap;font-size:15px;line-height:1.5">' + EM.esc(texto) + '</div>', nome: cfg().NOME }); } catch (em) { hist('', '', null, 'ia_erro', 'Relatório por e-mail: ' + em.message); } }
+        }
+        return doc;
+      });
+    } catch (err) {
+      trava(function () { var falhou = U.num(t.tentativas) + 1 >= 3; P.atualizar('Trabalhos', t.id, { status: falhou ? 'erro' : 'pendente', erro: U.cap(err.message, 300) }); });
+      return null;
+    }
+  };
+  /** Toda segunda, depois da hora do resumo, entra na fila o relatório da Diretoria. */
+  TR.agendarSemanal = function () {
+    var k = cfg(), agora = P.agora(), hoje = agora.slice(0, 10);
+    if (k.DIRETORIA_ATIVA === 'NAO' || !IA.ativa() || U.diaSemana(agora) !== 1 || k.DIRETORIA_ULTIMA === hoje || agora.slice(11, 16) < (k.ASSIST_HORA || '08:00')) return null;
+    salvarCfg({ DIRETORIA_ULTIMA: hoje });
+    return TR.semanal();
+  };
+  TR.semanal = function () {
+    var d = function (n) { return U.somaTempo(P.agora(), -n * 1440).slice(0, 10); };
+    return TR.criar('diretoria', 'diretoria.semanal', { de: d(7), ate: d(1), de_ant: d(14), ate_ant: d(8) });
+  };
+  /** Reclamação grave passada para humano: o Jurídico analisa sozinho. */
+  TR.casoGrave = function (c, motivo, resumo) {
+    if (cfg().JURIDICO_AUTO === 'NAO') return;
+    if (!/procon|advogad|process|justi[cç]a|reclame ?aqui|chargeback|contesta|jur[ií]dic|danos|indeniza/i.test(motivo + ' ' + resumo)) return;
+    TR.criar('juridico', 'juridico.caso', { contato_id: c.id, nome: c.nome, motivo: U.cap(motivo, 300), resumo: U.cap(resumo, 1000) });
+  };
+
+  R['escritorio.painel'] = function (u, b) {
+    var aba = b.aba || 'diretoria';
+    if (aba === 'financeiro') { exige(u, 'financeiro'); var f = FIN2.painel(); var cs = {}; P.tabela('Contatos').forEach(function (c) { cs[c.id] = c.nome; });
+      f.notas = P.tabela('Notas').slice().sort(function (a, c2) { return a.criado_em < c2.criado_em ? 1 : -1; }).slice(0, 150).map(function (n) { var o = Object.assign({}, n); o.contato_nome = cs[n.contato_id] || ''; o.descricao = NF.descricao(n); return o; });
+      f.emissor = NF.EMISSOR; return f; }
+    exige(u, 'relatorios');
+    if (aba === 'sucesso') return SUC.painel();
+    var docs = P.tabela('Documentos').filter(function (d) { return d.time === aba; }).sort(function (a, c2) { return a.criado_em < c2.criado_em ? 1 : -1; }).slice(0, 60);
+    var fila = P.tabela('Trabalhos').filter(function (t) { return t.time === aba && (t.status === 'pendente' || t.status === 'rodando' || t.status === 'erro'); });
+    return { documentos: docs, fila: fila, config: { DIRETORIA_ATIVA: cfg().DIRETORIA_ATIVA, JURIDICO_AUTO: cfg().JURIDICO_AUTO }, ia: IA.ativa() };
+  };
+  R['trabalho.criar'] = function (u, b) {
+    exige(u, 'relatorios');
+    if (!IA.ativa()) throw new Error('Ligue a equipe IA (chave da API) em Equipe IA antes.');
+    if (b.tipo === 'diretoria.semanal') return TR.semanal();
+    if (b.tipo === 'juridico.documento') {
+      if (!U.str(b.tipo_doc).trim()) throw new Error('Escolha o documento.');
+      return TR.criar('juridico', 'juridico.documento', { tipo_doc: U.cap(b.tipo_doc, 120), contexto: U.cap(b.contexto, 4000) });
+    }
+    throw new Error('Trabalho desconhecido.');
+  };
+  R['trabalho.repetir'] = function (u, b) { exige(u, 'relatorios'); P.atualizar('Trabalhos', b.id, { status: 'pendente', tentativas: '0', erro: '' }); return true; };
+  R['documento.salvar'] = function (u, b) {
+    exige(u, 'relatorios');
+    var d = P.tabela('Documentos').filter(function (x) { return x.id === b.id; })[0];
+    if (!d) throw new Error('Documento não encontrado.');
+    var mud = { atualizado_em: P.agora() };
+    if (b.conteudo !== undefined) mud.conteudo = U.cap(b.conteudo, 45000);
+    if (['rascunho', 'revisado', 'arquivado'].indexOf(b.status) >= 0) mud.status = b.status;
+    P.atualizar('Documentos', d.id, mud);
+    return Object.assign(d, mud);
+  };
+  R['melhoria.salvar'] = function (u, b) {
+    exige(u, 'relatorios');
+    if (b.id) {
+      var m = P.tabela('Melhorias').filter(function (x) { return x.id === b.id; })[0];
+      if (!m) throw new Error('Melhoria não encontrada.');
+      var mud = { atualizado_em: P.agora() };
+      if (['nova', 'planejada', 'feita', 'descartada'].indexOf(b.status) >= 0) mud.status = b.status;
+      P.atualizar('Melhorias', m.id, mud);
+      return Object.assign(m, mud);
+    }
+    return SUC.melhoria(b, 'Equipe: ' + u.nome);
+  };
+  R['nota.emitida'] = function (u, b) {
+    exige(u, 'financeiro');
+    var n = P.tabela('Notas').filter(function (x) { return x.id === b.id; })[0];
+    if (!n) throw new Error('Nota não encontrada.');
+    if (!U.str(b.numero).trim() && !U.str(b.link).trim()) throw new Error('Informe o número da nota ou o link do PDF.');
+    if (b.link && !/^https:\/\//i.test(b.link)) throw new Error('O link precisa começar com https://');
+    return NF.emitida(n, b.numero, b.link, u);
+  };
+  R['nota.situacao'] = function (u, b) {
+    exige(u, 'financeiro');
+    var n = P.tabela('Notas').filter(function (x) { return x.id === b.id; })[0];
+    if (!n) throw new Error('Nota não encontrada.');
+    if (['dispensada', 'cancelada', 'pendente'].indexOf(b.status) < 0) throw new Error('Situação inválida.');
+    P.atualizar('Notas', n.id, { status: b.status });
+    return Object.assign(n, { status: b.status });
+  };
+  R['nota.criar'] = function (u, b) {
+    exige(u, 'financeiro');
+    var c = b.contato_id ? exigeContato(u, b.contato_id) : null;
+    if (b.doc && !NF.docValido(b.doc)) throw new Error('CPF ou CNPJ inválido.');
+    if (!(U.num(b.valor) > 0)) throw new Error('Informe o valor.');
+    return NF.criar(c, { curso: b.curso, valor: b.valor, nome: b.nome || (c && c.nome), doc: b.doc, email: b.email, motivo: 'Criada pela equipe' });
   };
 
   R['aprovacao.listar'] = function (u, b) {
@@ -4302,7 +4737,16 @@ function PrumoLogica(P) {
   return {
     U: U, WA: WA, IG: IG, INT: INT, EM: EM, FIN: FIN, CHAT: CHAT, SUP: SUP, cfg: cfg, arquivar: arquivar, receberRastreio: receberRastreio, salvarCfg: salvarCfg, rotear: rotear, receberWebhook: receberWebhook, trabalhar: trabalhar,
     semear: semear, receber: receber, montarTexto: montarTexto, filtrarContatos: filtrarContatos, versao: PRUMO_VERSAO,
-    IA: IA, trabalharIA: function (trava, max) { try { IA.resumoDiario(trava); } catch (e) { hist('', '', null, 'ia_erro', 'Resumo diário: ' + e.message); } return IA.rodada(trava, max); }
+    IA: IA, SUC: SUC, NF: NF, FIN2: FIN2, TR: TR,
+    trabalharIA: function (trava, max) {
+      trava = trava || function (f) { return f(); };
+      var inicio = Date.now();
+      try { IA.resumoDiario(trava); } catch (e) { hist('', '', null, 'ia_erro', 'Resumo diário: ' + e.message); }
+      try { trava(function () { cfgMemo = null; SUC.processar(); TR.agendarSemanal(); }); } catch (e2) { hist('', '', null, 'ia_erro', 'Sucesso/Diretoria: ' + e2.message); }
+      var r = IA.rodada(trava, max);
+      if (Date.now() - inicio < 90000) { try { TR.processar(trava); } catch (e3) { hist('', '', null, 'ia_erro', 'Trabalho da equipe: ' + e3.message); } }
+      return r;
+    }
   };
 }
 

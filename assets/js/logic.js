@@ -1460,6 +1460,8 @@ var BrasaLogic = (function () {
         }
         T('Progress').update(p.id, patch);
         var rows = progressRows(u.id), prog = courseProgress(c, I, rows);
+        // chegou na metade do curso: o Sucesso do Cliente do CRM pergunta como está indo
+        if (prog.total >= 4 && prog.done * 2 >= prog.total && (prog.done - 1) * 2 < prog.total) crmSend('progresso_metade', Object.assign(crmCourse(c), { nome: u.name, email: u.email, telefone: u.phone, detalhe: prog.done + ' de ' + prog.total + ' aulas' }));
         if (prog.total && prog.done === prog.total) {
           var cert = T('Certificates').find(function (x) { return x.user_id === u.id && x.course_id === c.id; });
           if (!cert) { gain += 500; cert = certificateFor(u, c, I); res.course_done = true; }
@@ -2575,7 +2577,7 @@ var BrasaLogic = (function () {
     function crmOrder(o, c) {
       var s = o.seller_id ? T('Users').get(o.seller_id) : null, of = o.offer_id ? T('Offers').get(o.offer_id) : null;
       return Object.assign(crmCourse(c), {
-        nome: o.name, email: o.email, telefone: o.phone, valor: o.amount, pedido_id: o.id, metodo: o.method, parcelas: o.installments || 1,
+        nome: o.name, email: o.email, telefone: o.phone, documento: digits(o.doc), valor: o.amount, pedido_id: o.id, metodo: o.method, parcelas: o.installments || 1,
         vendedor_email: s ? s.email : '', oferta: of ? of.code : '', afiliado: o.aff_code || '', cupom: o.coupon || '',
         utm_source: o.utm_source || '', utm_campaign: o.utm_campaign || '', utm_content: o.utm_content || '',
         bump: o.bump_title || '', pos_compra: !!o.parent_order_id

@@ -20,6 +20,7 @@
     { id: 'email', rot: 'E-mail marketing', ic: 'email', perm: 'disparos' },
     { id: 'grupos', rot: 'Grupos e links', ic: 'grupos', perm: 'disparos' },
     { sec: 'Gestão', perm: 'relatorios' },
+    { id: 'escritorio', rot: 'Escritório', ic: 'predio', perm: 'relatorios' },
     { id: 'relatorios', rot: 'Relatórios', ic: 'relatorios', perm: 'relatorios' },
     { id: 'financeiro', rot: 'Financeiro', ic: 'dinheiro', perm: 'financeiro' },
     { id: 'equipe', rot: 'Equipe e acessos', ic: 'usuarioMais', perm: 'equipe' },

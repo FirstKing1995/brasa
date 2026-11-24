@@ -12,7 +12,8 @@
     vendas: ['Vendas', 'Atende quem chega com interesse e conduz até a matrícula'],
     recuperacao: ['Recuperação', 'Carrinho abandonado, Pix vencido e aluno parado'],
     suporte: ['Suporte', 'Acesso, senha, pagamento, cancelamento, reembolso e reclamações'],
-    consultor: ['Consultoria', 'Ajuda o aluno a aplicar o método das aulas (chat da área do aluno)']
+    consultor: ['Consultoria', 'Ajuda o aluno a aplicar o método das aulas (chat da área do aluno)'],
+    sucesso: ['Sucesso do cliente', 'Acompanha a jornada, ouve a experiência e transforma em melhorias']
   };
   var CANAIS = { whatsapp: 'WhatsApp', instagram: 'Instagram', site: 'Chat do site', aluno: 'Área do aluno' };
   var ESFORCOS = [['low', 'Rápida e econômica (recomendado)'], ['medium', 'Equilibrada'], ['high', 'Pensa mais antes de responder']];
@@ -23,6 +24,8 @@
       personalidade: 'Leve e prestativa. Puxa assunto sem cobrar: quer entender o que travou (dúvida, preço, momento) e resolver. Se for preço, mostra parcelamento e garantia antes de pensar em condição especial.' },
     { nome: 'Tati', papel: 'suporte', canais: 'whatsapp, aluno, site, instagram', cor: '#86B7B2', desconto_max: 0,
       personalidade: 'Paciente, calma e resolutiva. Explica o passo a passo sem jargão, confirma se deu certo e nunca discute com o cliente. Em reclamação, acolhe primeiro e resolve depois.' },
+    { nome: 'Clara', papel: 'sucesso', canais: 'whatsapp, aluno', cor: '#DCAA68', desconto_max: 0,
+      personalidade: 'Acolhedora e curiosa. Pergunta como a pessoa está de verdade, escuta, aprofunda com "me conta mais" e agradece cada resposta. Nunca vende nem pressiona.' },
     { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0,
       personalidade: 'Mentora experiente e encorajadora. Faz perguntas sobre o caso do aluno, responde com passos práticos baseados nas aulas e comemora cada avanço. Direta, sem enrolação.' }
   ];
@@ -94,7 +97,7 @@
     // equipe
     h += '<h3 style="margin:22px 0 10px">Equipe</h3>';
     if (!ags.length) {
-      h += '<div class="card"><div class="vazio">' + ic('robo') + '<h3>Nenhum agente ainda</h3><p>Comece com a equipe sugerida: Luna (vendas), Mel (recuperação), Tati (suporte) e Iara (consultoria na área do aluno). Você pode editar tudo depois.</p>' +
+      h += '<div class="card"><div class="vazio">' + ic('robo') + '<h3>Nenhum agente ainda</h3><p>Comece com a equipe sugerida: Luna (vendas), Mel (recuperação), Tati (suporte), Clara (sucesso do cliente) e Iara (consultoria na área do aluno). Você pode editar tudo depois.</p>' +
         '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn pri" id="ia-sugeridas" data-carregando=" Criando...">' + ic('plus') + ' Criar a equipe sugerida</button><button class="btn" id="ia-nova2">Criar do zero</button></div></div></div>';
     } else {
       h += '<div class="ia-grade">' + ags.map(cartao).join('') + '</div>';

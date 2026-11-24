@@ -71,7 +71,12 @@
     var tx = function (t) { return resp([{ type: 'text', text: t }]); };
     var ferr = function (n, inp) { return resp([{ type: 'tool_use', id: 'tu_' + Date.now() + Math.random().toString(36).slice(2, 6), name: n, input: inp }], 'tool_use'); };
     var c0 = cursos[0] || { slug: 'curso', titulo: 'o curso', preco: 497 };
-    var papel = /CONSULTORA/.test(sys) ? 'consultor' : /equipe de SUPORTE/.test(sys) ? 'suporte' : /assistente pessoal do dono/.test(sys) ? 'assistente' : 'vendas';
+    if (/assessoria jurídica/.test(sys)) return tx('RASCUNHO PARA REVISÃO DE UM ADVOGADO\n\n' + (/reclamação que pode ter risco/.test(JSON.stringify(ult.content || '')) ? 'Risco: médio. O cliente pode exercer o direito de arrependimento em 7 dias (CDC, art. 49).\n\nRecomendação: oferecer o reembolso dentro da garantia e registrar a conversa.\n\nMensagem sugerida: Oi! Entendemos sua insatisfação e já encaminhamos seu reembolso. Qualquer dúvida, estamos aqui.' : 'Documento de exemplo gerado na demonstração.\n\n1. Objeto\n- [PREENCHER]\n\n2. Garantia e reembolso\n- O aluno pode pedir o reembolso em até 7 dias (CDC, art. 49).\n\n3. Dados pessoais (LGPD)\n- Usamos seus dados só para entregar o curso e o atendimento.'));
+    if (/diretoria executiva/.test(sys)) {
+      if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') { var fx = {}; try { fx = JSON.parse(ult.content[0].content); } catch (e) {} return tx('Resultado da semana\n- Receita do mês: ' + (fx.receita_mes || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + (fx.meta_mes ? ' (' + fx.pct_meta + '% da meta)' : '') + '\n- Teto do MEI: ' + (fx.pct_teto || 0) + '% usado no ano\n\nDecisões para você\n- Definir a meta do mês, se ainda não definiu.\n- Revisar as melhorias mais pedidas pelos alunos.'); }
+      return ferr('financeiro', {});
+    }
+    var papel = /SUCESSO DO CLIENTE/.test(sys) ? 'sucesso' : /CONSULTORA/.test(sys) ? 'consultor' : /equipe de SUPORTE/.test(sys) ? 'suporte' : /assistente pessoal do dono/.test(sys) ? 'assistente' : 'vendas';
     var textoDe = function (m) { return m ? String(Array.isArray(m.content) ? m.content.map(function (b) { return b.text || ''; }).join(' ') : m.content || '').toLowerCase() : ''; };
     var pedidoOriginal = textoDe(msgs.filter(function (m) { return m.role === 'user' && !(Array.isArray(m.content) && m.content[0] && m.content[0].type === 'tool_result'); }).pop());
     if (papel === 'assistente') {
@@ -99,6 +104,13 @@
       if (/senha|acesso|entrar|login/.test(ts)) return ferr('reenviar_acesso', { email: (ts.match(/[\w.+-]+@[\w-]+\.[\w.]+/) || [])[0] || 'aluno@brasa.demo' });
       if (/reembols|cancel|dinheiro de volta/.test(ts)) return ferr('consultar_cliente', {});
       if (/@/.test(ts)) return ferr('consultar_cliente', {});
+    }
+    if (papel === 'sucesso') {
+      var tsu = textoDe(ult);
+      if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') return tx('Obrigada por contar, de verdade! Isso ajuda muito a gente a melhorar.');
+      if (/nota do sistema/.test(tsu)) return tx('Oi! Aqui é a ' + nome + ', da BRASA. Passando para saber como está sendo a sua experiência com o ' + c0.titulo + '. Conseguiu acessar tudo direitinho?');
+      var nota = (tsu.match(/\b(10|[0-9])\b/) || [])[1];
+      return ferr('registrar_feedback', { curso: c0.titulo, momento: 'espontaneo', nps: nota !== undefined ? Number(nota) : undefined, sentimento: /ruim|difícil|dificil|travei|não gostei|nao gostei|faltou/.test(tsu) ? 'negativo' : /amei|gostei|ótimo|otimo|top|bom/.test(tsu) ? 'positivo' : 'neutro', comentario: tsu.slice(0, 200), faltou: /faltou|senti falta/.test(tsu) ? tsu.slice(0, 200) : '' });
     }
     if (papel === 'consultor' && !(Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result')) {
       var tc = textoDe(ult);
@@ -407,7 +419,8 @@
       { nome: 'Luna', papel: 'vendas', canais: 'whatsapp, instagram, site', cor: '#C9592F', desconto_max: 10, personalidade: 'Calorosa, segura e objetiva.' },
       { nome: 'Mel', papel: 'recuperacao', canais: 'whatsapp', cor: '#E2A72E', desconto_max: 15, personalidade: 'Leve e prestativa.' },
       { nome: 'Tati', papel: 'suporte', canais: 'whatsapp, aluno, site, instagram', cor: '#86B7B2', desconto_max: 0, personalidade: 'Paciente, calma e resolutiva.' },
-      { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0, personalidade: 'Mentora experiente e encorajadora.' }
+      { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0, personalidade: 'Mentora experiente e encorajadora.' },
+      { nome: 'Clara', papel: 'sucesso', canais: 'whatsapp, aluno', cor: '#DCAA68', desconto_max: 0, personalidade: 'Acolhedora e curiosa.' }
     ].filter(function (a) { return !papeisDemo[a.papel]; });
     if (faltam.length) {
       var sa = L.rotear({ action: 'login', email: 'admin@brasa.demo', senha: 'brasa123' });
