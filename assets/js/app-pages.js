@@ -369,7 +369,7 @@
       if (sig === last) return; last = sig;
       log.innerHTML = msgs.length ? msgs.map(function (m) {
         return '<div class="msg msg--' + (m.from === 'me' ? 'me' : 'them') + '"><div class="msg__bubble">' + B.nl2br(m.text) + '</div><div class="msg__time t-xs t-faint">' + (m.from === 'me' ? 'Você' : 'Suporte') + ' · ' + B.fmt.rel(m.ts) + '</div></div>';
-      }).join('') : '<div class="empty" style="padding:28px 8px">' + B.icon('chat') + '<div>Mande sua dúvida. Respondemos por aqui.</div></div>';
+      }).join('') : '<div class="empty" style="padding:28px 8px">' + B.icon('chat') + '<div>Mande sua dúvida: a equipe e as consultoras da BRASA respondem por aqui.</div></div>';
       log.scrollTop = log.scrollHeight;
     }
     function load() { return B.api('chat').then(function (r) { paint(r.messages); var dot = B.$('#chatDot'); if (dot) dot.hidden = true; }).catch(function () {}); }

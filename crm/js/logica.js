@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.4.0';
+var PRUMO_VERSAO = '1.5.0';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -35,6 +35,7 @@ var PRUMO_ESQUEMA = {
     'origem', 'lembrete_em', 'atraso_avisado', 'reembolsado_em', 'reembolso_valor', 'criado_em', 'atualizado_em'],
   Agentes: ['id', 'nome', 'ativo', 'papel', 'canais', 'personalidade', 'regras', 'conhecimento', 'desconto_max', 'cor', 'usuario_id', 'conversas', 'mensagens', 'passadas',
     'tokens_in', 'tokens_out', 'custo', 'criado_em', 'atualizado_em'],
+  Aprovacoes: ['id', 'tipo', 'titulo', 'descricao', 'dados', 'contato_id', 'agente_id', 'status', 'resultado', 'criado_em', 'decidido_em', 'decidido_por'],
   Config: ['chave', 'valor']
 };
 
@@ -117,6 +118,9 @@ var PRUMO_CONFIG_PADRAO = {
   IA_ATIVA: 'NAO', IA_CHAVE: '', IA_MODELO: 'claude-opus-5-5', IA_ESFORCO: 'low', IA_ESPERA_SEG: '25', IA_LIMITE_DIA: '300',
   IA_ATENDE: 'todos',           // todos | sem_dono (só contatos sem responsável humano)
   IA_ERRO: '',
+  IA_RECUPERAR: 'SIM', IA_RECUPERAR_MIN: '20', // a equipe de recuperação chama sozinha carrinho, Pix vencido, cartão recusado, aluno parado e estreia
+  // Assistente: resumo diário para o dono (e-mail e WhatsApp)
+  ASSIST_ATIVO: 'NAO', ASSIST_HORA: '08:00', ASSIST_EMAIL: '', ASSIST_WHATS: '', ASSIST_ULTIMO: '',
   PROX_TRABALHO: ''
 };
 
@@ -729,7 +733,7 @@ function PrumoLogica(P) {
     return reg;
   }
 
-  function canalDe(c) { return c.canal === 'site' ? 'site' : c.canal === 'instagram' || (!c.telefone && c.ig_id) ? 'instagram' : 'whatsapp'; }
+  function canalDe(c) { return c.canal === 'aluno' ? 'aluno' : c.canal === 'site' ? 'site' : c.canal === 'instagram' || (!c.telefone && c.ig_id) ? 'instagram' : 'whatsapp'; }
   /** Janela de atendimento de 24h (API oficial): aberta quando o contato escreveu nas últimas 24h. */
   function janelaAte(c) {
     if (c.janela_ate) return c.janela_ate;
@@ -746,6 +750,14 @@ function PrumoLogica(P) {
     var canal = canalDe(c);
     var reg = { direcao: 'out', texto: texto, tipo: opc.midia_url ? ({ image: 'imagem', video: 'video', audio: 'audio', document: 'documento' }[opc.midia_tipo] || 'imagem') : 'texto', midia_url: opc.midia_url || '', usuario_id: opc.user ? opc.user.id : '', origem: opc.origem || 'manual', canal: canal };
     if (opc.metaModelo && opc.metaModelo.nome && !texto) reg.texto = '[modelo ' + opc.metaModelo.nome + ']';
+    if (canal === 'aluno') { // chat da área do aluno: a resposta vai para a BRASA
+      try {
+        if (!c.email) throw new Error('Contato sem e-mail da área do aluno.');
+        if (opc.midia_url) texto = (texto ? texto + '\n' : '') + opc.midia_url;
+        BR.chamar('bridgeChatReply', { email: c.email, text: texto });
+        reg.status = 'enviada'; registrarMsg(c, reg); return { ok: true };
+      } catch (eA) { reg.status = 'erro'; reg.erro = eA.message; registrarMsg(c, reg); throw eA; }
+    }
     if (canal === 'site') { // a resposta fica guardada e a janela de chat do site busca
       reg.status = 'enviada';
       registrarMsg(c, reg);
@@ -793,7 +805,7 @@ function PrumoLogica(P) {
 
   /** Mensagem que chegou pelo webhook do WhatsApp. */
   function receber(m) {
-    var ehIg = m.canal === 'instagram', ehSite = m.canal === 'site';
+    var ehIg = m.canal === 'instagram', ehSite = m.canal === 'site' || m.canal === 'aluno';
     if (!m.telefone && !(ehIg && m.ig_id) && !(ehSite && m.contato_id)) return null;
     if (m.wa_id && P.cache.get('wa_' + m.wa_id)) return null; // eco de algo que o próprio sistema enviou
     if (m.wa_id) P.cache.put('wa_' + m.wa_id, '1', 3600);
@@ -808,9 +820,9 @@ function PrumoLogica(P) {
     var c = r.contato;
     if (r.novo && !ehSite) hist(c.id, '', null, 'contato_criado', ehIg ? 'Chegou pelo Instagram' : m.anuncio ? 'Chegou por anúncio: ' + (m.anuncio.titulo || m.anuncio.id) : 'Chegou pelo WhatsApp');
     if (m.deMim) { // enviada pelo celular da empresa (ou pelo app do Instagram)
-      registrarMsg(c, { direcao: 'out', texto: m.texto, tipo: m.tipo, status: 'enviada', origem: 'celular', wa_id: m.wa_id, canal: m.canal });
+      registrarMsg(c, { direcao: 'out', texto: m.texto, tipo: m.tipo, status: 'enviada', origem: m.origem || 'celular', wa_id: m.wa_id, canal: m.canal });
       pausarRobo(c);
-      if (c.ia_agente_id && c.ia_estado !== 'humano') { P.atualizar('Contatos', c.id, { ia_estado: 'humano', ia_acordar_em: '' }); c.ia_estado = 'humano'; hist(c.id, '', null, 'ia', 'Alguém respondeu pelo celular: a vendedora IA saiu da conversa'); }
+      if (c.ia_agente_id && c.ia_estado !== 'humano') { P.atualizar('Contatos', c.id, { ia_estado: 'humano', ia_acordar_em: '' }); c.ia_estado = 'humano'; hist(c.id, '', null, 'ia', 'Alguém da equipe respondeu: a IA saiu da conversa'); }
       return c;
     }
     // comentário no Instagram: não abre janela de DM, mas pode disparar automação (comentou, recebe no Direct)
@@ -821,8 +833,8 @@ function PrumoLogica(P) {
       return c;
     }
     var mud = { janela_ate: U.somaTempo(P.agora(), 1440) };
-    if (ehSite && c.canal !== 'site') mud.canal = 'site';
-    else if (!ehSite && !ehIg && c.canal === 'site') mud.canal = 'whatsapp'; // voltou a falar pelo WhatsApp
+    if (ehSite && c.canal !== m.canal) mud.canal = m.canal;
+    else if (!ehSite && !ehIg && (c.canal === 'site' || c.canal === 'aluno')) mud.canal = 'whatsapp'; // voltou a falar pelo WhatsApp
     if (m.anuncio && usaMeta()) { // clique em anúncio para o WhatsApp: mensagens grátis por um período
       mud.gratis_ate = U.somaTempo(P.agora(), (U.num(cfg().META_GRATIS_HORAS) || 72) * 60);
       var cpA = camposDe(c); cpA.anuncio = m.anuncio.titulo || m.anuncio.id; cpA.anuncio_id = m.anuncio.id; mud.campos = JSON.stringify(cpA);
@@ -1539,6 +1551,7 @@ function PrumoLogica(P) {
   }
 
   function webhookEntrada(body, p, vendas) {
+    if (vendas && (p.fonte === 'brasa' || U.str(body.plataforma).toUpperCase() === 'BRASA') && /^chat_(aluno|equipe)$/.test(U.str(body.evento))) return INT.chatBrasa(body);
     var plano = achatar(body);
     var d = {};
     Object.keys(ALVOS).forEach(function (k) { d[k] = acharValor(plano, ALVOS[k]); });
@@ -2195,6 +2208,14 @@ function PrumoLogica(P) {
     P.inserir('Negocios', nn);
     hist(c.id, nn.id, null, 'negocio', 'Negócio criado pela BRASA: ' + EVENTO_ROTULO[ev.evento]);
   };
+  /** Mensagem no chat da área do aluno (ou resposta da equipe pelo painel da BRASA). */
+  INT.chatBrasa = function (b) {
+    if (!U.emailOk(b.email)) throw new Error('Chat da BRASA sem e-mail.');
+    var r = gravarContato({ nome: b.nome, email: b.email, telefone: b.telefone, origem: 'BRASA', tags: b.afiliado ? ['Afiliado'] : [] }, null, { naoSobrescrever: true, silencioso: true, semGatilhos: true });
+    var eq = b.evento === 'chat_equipe';
+    receber({ canal: 'aluno', contato_id: r.contato.id, texto: U.cap(b.texto, 4000), tipo: 'texto', wa_id: 'aluno_' + U.str(b.msg_id || P.uuid()), primeira: r.novo, deMim: eq, origem: eq ? 'painel BRASA' : '' });
+    return { ok: true, contato_id: r.contato.id };
+  };
   INT.aplicarEvento = function (c, ev) {
     if (!ev.evento) return;
     if (ev.plataforma === 'BRASA') INT.brasa(c, ev);
@@ -2227,6 +2248,7 @@ function PrumoLogica(P) {
     }
     saida('compra.' + ev.evento, { contato: contatoPublico(c), produto: ev.produto, valor: ev.valor, plataforma: ev.plataforma });
     gatilho('evento', c, { evento: ev.evento, produto: ev.produto });
+    try { IA.aoEvento(c, ev); } catch (eI) { hist(c.id, '', null, 'ia_erro', 'Recuperação: ' + eI.message); }
   };
 
   /** ActiveCampaign: cria/atualiza o contato, coloca na lista e aplica tags. */
@@ -2465,7 +2487,7 @@ function PrumoLogica(P) {
     return o;
   }
 
-  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO'].indexOf(k) < 0; });
+  var CHAVES_EDITAVEIS = Object.keys(PRUMO_CONFIG_PADRAO).filter(function (k) { return ['PROX_TRABALHO', 'WEBHOOK_CHAVE', 'ENTRADA_CHAVE', 'API_CHAVE', 'VENDAS_CHAVE', 'ARQUIVO_FEITO', 'ARQUIVO_PASTA', 'EMAIL_CONTAGEM', 'RASTREIO_SEGREDO', 'SITE_URL', 'MP_CHAVE', 'FIN_VERIFICADO', 'SUPORTE_CODIGO', 'IA_ERRO', 'ASSIST_ULTIMO'].indexOf(k) < 0; });
 
   function bootstrap(user) {
     var contatos = filtraContatosDoUsuario(user, P.tabela('Contatos'));
@@ -2485,7 +2507,8 @@ function PrumoLogica(P) {
       campanhas: pode(user, 'disparos') ? P.tabela('Campanhas') : [],
       emails: pode(user, 'disparos') || pode(user, 'automacoes') ? P.tabela('Emails') : [],
       grupos: P.tabela('Grupos'),
-      agentes: IA.publicos()
+      agentes: IA.publicos(),
+      aprovacoes_pendentes: pode(user, 'todos') ? IA.pendentes() : 0
     };
   }
 
@@ -2494,7 +2517,7 @@ function PrumoLogica(P) {
   R['sync'] = function (u, b) {
     var desde = U.str(b.desde);
     var contatos = filtraContatosDoUsuario(u, P.tabela('Contatos')).filter(function (c) { return !desde || c.atualizado_em >= desde; });
-    var r = { agora: P.agora(), contatos: contatos.map(contatoLeve) };
+    var r = { agora: P.agora(), contatos: contatos.map(contatoLeve), aprovacoes_pendentes: pode(u, 'todos') ? IA.pendentes() : 0 };
     if (b.contato_id) {
       var c = contatoPorId(b.contato_id);
       if (c && podeContato(u, c)) r.mensagens = P.filtrar('Mensagens', 'contato_id', c.id).filter(function (m) { return !desde || m.criado_em >= desde; });
@@ -2943,15 +2966,19 @@ function PrumoLogica(P) {
   IA.usuarios = function () { var o = {}; IA.lista().forEach(function (a) { if (a.usuario_id) o[a.usuario_id] = a; }); return o; };
   IA.ehAgente = function (usuarioId) { return !!(usuarioId && IA.usuarios()[usuarioId]); };
   IA.usuarioDe = function (ag) { return P.tabela('Usuarios').filter(function (u) { return u.id === ag.usuario_id; })[0] || { id: ag.usuario_id, nome: ag.nome, email: '', perfil: 'closer' }; };
-  IA.canalOk = function (canal) { return canal === 'site' ? true : canal === 'instagram' ? IG.ativo() : WA.temApi(); };
+  IA.canalOk = function (canal) { return canal === 'site' ? true : canal === 'aluno' ? !!(cfg().BRASA_URL && cfg().BRASA_CHAVE) : canal === 'instagram' ? IG.ativo() : WA.temApi(); };
   IA.publicos = function () { return IA.lista().map(function (a) { return { id: a.id, nome: a.nome, usuario_id: a.usuario_id, cor: a.cor, ativo: a.ativo, papel: a.papel }; }); };
 
   /** Escolhe a vendedora de um canal: entre as ativas que atendem o canal, a com menos conversas. */
-  IA.escolher = function (canal) {
+  IA.escolher = function (canal, c, papel) {
     var ags = IA.lista().filter(function (a) { return a.ativo === 'SIM' && U.lista(a.canais).indexOf(canal) >= 0; });
-    if (!ags.length) return null;
-    ags.sort(function (a, b) { return U.num(a.conversas) - U.num(b.conversas); });
-    return ags[0];
+    var ordem = papel ? (U.str(papel).split('|')) : IA.preferencia(canal, c);
+    var menos = function (l) { return l.sort(function (a, b) { return U.num(a.conversas) - U.num(b.conversas); })[0] || null; };
+    for (var i = 0; i < ordem.length; i++) {
+      var l = ags.filter(function (a) { return (a.papel || 'vendas') === ordem[i]; });
+      if (l.length) return menos(l);
+    }
+    return papel ? null : menos(ags);
   };
   /** A vendedora que deve responder este contato agora (ou null). */
   IA.deveAtender = function (c) {
@@ -2962,7 +2989,7 @@ function PrumoLogica(P) {
     if (ag && (ag.ativo !== 'SIM' || U.lista(ag.canais).indexOf(canal) < 0)) ag = null;
     if (!ag) {
       if (c.responsavel_id && !IA.ehAgente(c.responsavel_id) && cfg().IA_ATENDE === 'sem_dono') return null;
-      ag = IA.escolher(canal);
+      ag = IA.escolher(canal, c);
     }
     return ag;
   };
@@ -3014,9 +3041,34 @@ function PrumoLogica(P) {
 
   /* ------------------------------------------------------------ prompt */
   IA.PAPEIS = {
-    vendas: 'Você atende quem chega com interesse e conduz até a matrícula.',
-    recuperacao: 'Você cuida de quem quase comprou (carrinho, Pix ou boleto vencido) e de alunos parados: entende o que travou e ajuda a concluir.',
-    suporte: 'Você tira dúvidas de quem já é aluno (acesso, certificado, uso da plataforma) e, quando faz sentido, indica o próximo curso.'
+    vendas: 'Você é da equipe de VENDAS: atende quem chega com interesse e conduz até a matrícula.',
+    recuperacao: 'Você é da equipe de RECUPERAÇÃO: cuida de quem quase comprou (carrinho, Pix ou cartão recusado), de quem esperava um curso que estreou e de alunos parados. Entende o que travou e ajuda a concluir, sem pressão.',
+    suporte: 'Você é da equipe de SUPORTE: resolve problemas de clientes e alunos (acesso, senha, pagamento, certificado, cancelamento, reembolso e reclamações) com calma, rapidez e empatia.',
+    consultor: 'Você é CONSULTORA da BRASA: domina o método ensinado nos cursos e ajuda o aluno a aplicar no caso dele, de forma prática, como uma mentora.'
+  };
+  IA.NOMES_PAPEIS = { vendas: 'vendas', recuperacao: 'recuperação', suporte: 'suporte', consultor: 'consultoria' };
+  IA.INSTRUCOES = {
+    suporte: [
+      'COMO VOCÊ RESOLVE',
+      '- Primeiro entenda o problema. Para ver a conta, os cursos e os pedidos da pessoa, use consultar_cliente.',
+      '- Acesso ou senha: use reenviar_acesso com o e-mail da conta. Chega um e-mail com o link de primeiro acesso ou um código de 6 dígitos para criar nova senha (vale 30 minutos; peça para olhar spam e promoções). Você nunca vê, pede ou informa senha.',
+      '- Cancelamento ou reembolso: pergunte o motivo com respeito e tente resolver o problema por trás uma vez, sem insistir. Se a pessoa mantiver o pedido e o pedido estiver dentro da garantia, use pedir_reembolso (vai para aprovação da equipe). Fora da garantia, explique a política com gentileza; se houver um bom motivo, use pedir_aprovacao.',
+      '- Reclamação: acolha, peça desculpas pelo transtorno sem culpar ninguém, resolva o que estiver ao seu alcance. Ameaça de Procon, processo, advogado, chargeback, ou cliente muito irritado: passar_para_humano com urgente.',
+      '- Quando a pessoa quiser comprar, transfira para vendas; dúvida sobre como aplicar o conteúdo, transfira para consultoria.'
+    ].join('\n'),
+    consultor: [
+      'COMO VOCÊ CONSULTA',
+      '- Antes de responder qualquer dúvida de conteúdo, use buscar_nas_aulas. Baseie a resposta no que as aulas ensinam e cite a aula (ex.: "na aula T1:E3 ...").',
+      '- Se as aulas não cobrirem o assunto, diga isso com honestidade e dê uma orientação sua, deixando claro que é uma sugestão.',
+      '- Faça perguntas sobre o caso da pessoa e responda com passos práticos, um de cada vez. Celebre o progresso. Use consultar_cliente para ver os cursos e o progresso do aluno.',
+      '- Se fizer sentido, indique a próxima aula ou o próximo curso. Acesso, pagamento ou cancelamento: transfira para suporte.'
+    ].join('\n')
+  };
+  /** Ordem de preferência das equipes para quem chega por um canal. */
+  IA.preferencia = function (canal, c) {
+    if (canal === 'aluno') return ['consultor', 'suporte', 'vendas'];
+    if (c && (c.status === 'cliente' || U.tags(c.tags).indexOf('Aluno') >= 0)) return ['suporte', 'consultor', 'vendas', 'recuperacao'];
+    return ['vendas', 'recuperacao', 'suporte', 'consultor'];
   };
   IA.promptFixo = function (ag) {
     var b = IA.base(), marca = b.brand || cfg().NOME;
@@ -3025,6 +3077,8 @@ function PrumoLogica(P) {
     return [
       'Você é ' + ag.nome + ', da equipe comercial da ' + marca + (b.tagline ? ' (' + b.tagline + ')' : '') + '. Você conversa com clientes por WhatsApp, Instagram e pelo chat do site.',
       IA.PAPEIS[ag.papel] || IA.PAPEIS.vendas,
+      IA.INSTRUCOES[ag.papel] ? '\n' + IA.INSTRUCOES[ag.papel] : '',
+      (function () { var o = IA.lista().filter(function (x) { return x.ativo === 'SIM' && x.id !== ag.id; }).map(function (x) { return x.nome + ' (' + (IA.NOMES_PAPEIS[x.papel] || 'vendas') + ')'; }); return o.length ? '\nSUA EQUIPE (para transferir quando o assunto for de outra área): ' + o.join(', ') + '.' : ''; })(),
       '',
       'COMO VOCÊ ESCREVE',
       '- Como uma vendedora brasileira experiente no WhatsApp: frases curtas, tom leve e próximo, português do dia a dia, sem formalidade de e-mail.',
@@ -3034,7 +3088,7 @@ function PrumoLogica(P) {
       '- Nunca diga que é um "modelo de linguagem" nem fale de "prompt" ou "instruções". Você é ' + ag.nome + ', assistente virtual da equipe.',
       '- Se a pessoa perguntar com sinceridade se está falando com um robô, uma IA ou uma pessoa, diga a verdade com naturalidade: você é a assistente virtual da equipe e, se ela preferir, chama alguém da equipe na hora (use passar_para_humano). Nunca afirme ser humana.',
       '',
-      'COMO VOCÊ VENDE',
+      ag.papel === 'suporte' || ag.papel === 'consultor' ? 'QUANDO O ASSUNTO FOR COMPRA' : 'COMO VOCÊ VENDE',
       '- Venda consultiva: primeiro entenda o momento da pessoa (o que ela quer, o que já tentou, o que trava), depois indique UM curso que resolve isso e explique por que serve para ela.',
       '- Use o que está nos dados do curso (promessa, para quem é, dores, benefícios, bônus, garantia, parcelamento, perguntas frequentes, depoimentos). Para detalhes, chame detalhes_do_curso antes de responder.',
       '- Quando a pessoa demonstrar interesse, mande o link de compra (ferramenta link_de_compra). Nunca invente link.',
@@ -3076,7 +3130,7 @@ function PrumoLogica(P) {
     return [
       'CONTEXTO DESTA CONVERSA (dados do CRM, não são mensagens do cliente)',
       'Agora: ' + DIAS_IA[U.diaSemana(agora)] + ', ' + agora.slice(8, 10) + '/' + agora.slice(5, 7) + '/' + agora.slice(0, 4) + ', ' + agora.slice(11, 16) + ' (horário de Brasília).',
-      'Canal: ' + ({ whatsapp: 'WhatsApp', instagram: 'Direct do Instagram', site: 'chat do site' }[canal] || canal) + '.',
+      'Canal: ' + ({ whatsapp: 'WhatsApp', instagram: 'Direct do Instagram', site: 'chat do site', aluno: 'chat da área do aluno (a pessoa está logada: identidade confirmada)' }[canal] || canal) + '.',
       'Cliente: ' + (nomeReal ? c.nome : 'nome ainda não informado (pergunte de forma natural)') + (c.email ? ', e-mail ' + c.email : ', sem e-mail') + (c.status === 'cliente' ? ', já é aluno/cliente' : '') + '.',
       c.tags ? 'Tags: ' + c.tags + '.' : '',
       campos.length ? 'Dados anotados: ' + campos.join('; ') + '.' : '',
@@ -3101,6 +3155,96 @@ function PrumoLogica(P) {
     { name: 'agendar_retorno', description: 'Agenda você para voltar a falar com esta pessoa depois, se ela não responder até lá. Use quando a conversa parar sem decisão.',
       input_schema: { type: 'object', properties: { horas: { type: 'number', description: 'de 1 a 72' }, motivo: { type: 'string' } }, required: ['horas', 'motivo'] } }
   ];
+
+  IA.FERRAMENTAS.push(
+    { name: 'transferir', description: 'Passa a conversa para outra pessoa da equipe IA (vendas, recuperacao, suporte ou consultor) quando o assunto é da área dela. Depois diga à pessoa, numa frase, quem vai continuar.',
+      input_schema: { type: 'object', properties: { equipe: { type: 'string', enum: ['vendas', 'recuperacao', 'suporte', 'consultor'] }, resumo: { type: 'string', description: 'o que a pessoa precisa, em 1 a 3 frases' } }, required: ['equipe', 'resumo'] } },
+    { name: 'pedir_aprovacao', description: 'Pede a uma pessoa da equipe para aprovar uma exceção (prazo, desconto acima do seu limite, troca de curso, reembolso fora da garantia). Quando decidirem, a mensagem certa sai sozinha para o cliente.',
+      input_schema: { type: 'object', properties: { titulo: { type: 'string' }, descricao: { type: 'string', description: 'o pedido e o motivo' }, mensagem_se_aprovado: { type: 'string' }, mensagem_se_recusado: { type: 'string' } }, required: ['titulo', 'descricao', 'mensagem_se_aprovado', 'mensagem_se_recusado'] } },
+    { name: 'consultar_cliente', description: 'Mostra a conta da pessoa na BRASA: situação, cursos com progresso e pedidos (com garantia). Por segurança, só funciona para quem fala pela área do aluno, pelo WhatsApp ou e-mail cadastrados.',
+      input_schema: { type: 'object', properties: {} } },
+    { name: 'reenviar_acesso', description: 'Envia para o e-mail da conta o link de primeiro acesso ou um código para criar nova senha. Só o dono do e-mail recebe.',
+      input_schema: { type: 'object', properties: { email: { type: 'string' } }, required: ['email'] } },
+    { name: 'pedir_reembolso', description: 'Registra o pedido de reembolso de um pedido aprovado (use o id que veio em consultar_cliente). Vai para aprovação de uma pessoa; quando aprovarem, o dinheiro volta e o cliente é avisado.',
+      input_schema: { type: 'object', properties: { pedido_id: { type: 'string' }, motivo: { type: 'string' } }, required: ['pedido_id', 'motivo'] } },
+    { name: 'buscar_nas_aulas', description: 'Procura no conteúdo das aulas da BRASA (títulos, descrições e texto das aulas). Use antes de responder dúvidas de conteúdo.',
+      input_schema: { type: 'object', properties: { pergunta: { type: 'string', description: 'palavras-chave do assunto' }, curso: { type: 'string', description: 'slug ou nome do curso (opcional)' } }, required: ['pergunta'] } }
+  );
+  IA.KIT = {
+    comum: ['passar_para_humano', 'anotar', 'transferir', 'agendar_retorno', 'pedir_aprovacao', 'detalhes_do_curso'],
+    vendas: ['link_de_compra', 'mover_no_funil'],
+    recuperacao: ['link_de_compra', 'mover_no_funil', 'consultar_cliente'],
+    suporte: ['consultar_cliente', 'reenviar_acesso', 'pedir_reembolso', 'link_de_compra'],
+    consultor: ['buscar_nas_aulas', 'consultar_cliente']
+  };
+  IA.ferramentasDe = function (ag) {
+    var kit = IA.KIT.comum.concat(IA.KIT[ag.papel] || IA.KIT.vendas);
+    return IA.FERRAMENTAS.filter(function (f) { return kit.indexOf(f.name) >= 0; });
+  };
+  /** E-mail em que dá para confiar: veio da BRASA (compra, cadastro) ou do chat logado, nunca só do que a pessoa digitou. */
+  IA.emailConfiavel = function (c) {
+    if (!c.email) return '';
+    var cp = camposDe(c);
+    return canalDe(c) === 'aluno' || c.origem === 'BRASA' || /BRASA:/.test(c.tags) || cp.pedido_brasa ? c.email : '';
+  };
+  IA.criarAprovacao = function (o) {
+    var a = { id: P.id('AP'), tipo: o.tipo, titulo: U.cap(o.titulo, 150), descricao: U.cap(o.descricao, 2000), dados: JSON.stringify(o.dados || {}), contato_id: o.contato_id || '', agente_id: o.agente_id || '',
+      status: 'pendente', resultado: '', criado_em: P.agora(), decidido_em: '', decidido_por: '' };
+    P.inserir('Aprovacoes', a);
+    if (o.contato_id) hist(o.contato_id, '', o.user || null, 'aprovacao', 'Pedido para aprovação: ' + a.titulo);
+    saida('aprovacao.criada', { aprovacao: a });
+    return a;
+  };
+  IA.executarExtra = function (nome, inp, ctx) {
+    var c = ctx.c, ag = ctx.ag, user = IA.usuarioDe(ag);
+    if (nome === 'transferir') {
+      var canal = canalDe(c), alvo = IA.escolher(canal, c, inp.equipe);
+      if (!alvo || alvo.id === ag.id) return { erro: 'Não há ninguém ativo de ' + (IA.NOMES_PAPEIS[inp.equipe] || inp.equipe) + ' neste canal. Resolva você mesma ou use passar_para_humano.' };
+      if (!ctx.teste) ctx.transferir = { ag: alvo, resumo: U.cap(inp.resumo, 600) };
+      return { ok: true, para: alvo.nome, equipe: IA.NOMES_PAPEIS[alvo.papel], instrucao: 'Diga numa frase curta que ' + alvo.nome + ', da equipe de ' + IA.NOMES_PAPEIS[alvo.papel] + ', continua com a pessoa agora.' };
+    }
+    if (nome === 'pedir_aprovacao') {
+      if (ctx.teste) return { ok: true, simulado: true, instrucao: 'Diga que vai confirmar com a equipe e avisa assim que tiver a resposta.' };
+      IA.criarAprovacao({ tipo: 'mensagem', titulo: inp.titulo, descricao: inp.descricao, contato_id: c.id, agente_id: ag.id, user: user,
+        dados: { msg_aprovado: U.cap(inp.mensagem_se_aprovado, 2000), msg_recusado: U.cap(inp.mensagem_se_recusado, 2000) } });
+      return { ok: true, instrucao: 'Diga que vai confirmar com a equipe e avisa assim que tiver a resposta. Não prometa o resultado.' };
+    }
+    if (nome === 'consultar_cliente') {
+      if (ctx.teste) return ctx.cliente = { found: true, simulado: true, name: c.nome, email: c.email || 'cliente@exemplo.com', status: 'ativa', has_password: true, courses: [{ course: 'Curso de exemplo', progress: '40% (8 de 20 aulas)', access_until: 'vitalício' }], orders: [{ id: 'oTESTE', course: 'Curso de exemplo', amount: 497, status: 'approved', date: P.agora().slice(0, 10), in_guarantee: true, days_since_payment: 2, guarantee_days: 7 }] };
+      var em = IA.emailConfiavel(c), tel = canalDe(c) === 'whatsapp' ? c.telefone : '';
+      if (!em && !tel) return { verificado: false, instrucao: 'Não dá para mostrar dados da conta por este canal. Peça para a pessoa falar pela área do aluno ou pelo WhatsApp cadastrado. Você pode usar reenviar_acesso com o e-mail que ela disser: o acesso chega só na caixa do dono.' };
+      var d = BR.chamar('bridgeCustomer', { email: em, phone: tel });
+      if (!d.found) return { found: false, instrucao: 'Não achei conta nem pedido com os dados deste contato. Pergunte o e-mail usado na compra e use reenviar_acesso com ele (não confirme se a conta existe).' };
+      if (em && d.email && U.norm(d.email) !== U.norm(c.email) && canalDe(c) !== 'whatsapp') return { verificado: false };
+      ctx.cliente = d;
+      if (d.email && !c.email && tel) { P.atualizar('Contatos', c.id, { email: d.email }); c.email = d.email; }
+      return d;
+    }
+    if (nome === 'reenviar_acesso') {
+      if (!U.emailOk(inp.email)) return { erro: 'E-mail inválido. Confirme o e-mail com a pessoa.' };
+      if (!ctx.teste) BR.chamar('bridgeResend', { email: U.str(inp.email).trim().toLowerCase() });
+      hist(c.id, '', user, 'suporte', 'Acesso reenviado para ' + inp.email);
+      return { ok: true, instrucao: 'Diga que, se houver conta com esse e-mail, acabou de chegar uma mensagem com o acesso ou um código para criar nova senha, válido por 30 minutos. Peça para olhar spam e promoções. Não confirme se a conta existe.' };
+    }
+    if (nome === 'pedir_reembolso') {
+      var cli = ctx.cliente || IA.executarExtra('consultar_cliente', {}, ctx);
+      if (!cli || !cli.orders) return { erro: 'Não consegui confirmar a conta desta pessoa. Use consultar_cliente ou passe para humano.' };
+      var o = cli.orders.filter(function (x) { return x.id === inp.pedido_id; })[0];
+      if (!o) return { erro: 'Pedido não encontrado na conta desta pessoa. Use um id de consultar_cliente.' };
+      if (o.status !== 'approved') return { erro: 'Este pedido não está pago (situação: ' + o.status + '), não há o que reembolsar.' };
+      if (ctx.teste) return { ok: true, simulado: true, instrucao: 'Avise que o pedido foi registrado e a equipe confirma em breve.' };
+      var ja = P.tabela('Aprovacoes').some(function (a) { return a.tipo === 'reembolso' && a.status === 'pendente' && U.json(a.dados, {}).pedido_id === o.id; });
+      if (!ja) IA.criarAprovacao({ tipo: 'reembolso', titulo: 'Reembolso: ' + o.course + ' (' + brlIA(o.amount) + ') - ' + c.nome, contato_id: c.id, agente_id: ag.id, user: user,
+        descricao: 'Motivo: ' + U.cap(inp.motivo, 600) + '\nPedido ' + o.id + ', pago em ' + (o.paid || o.date) + ', há ' + o.days_since_payment + ' dias. ' + (o.in_guarantee ? 'Dentro da garantia de ' + o.guarantee_days + ' dias.' : 'FORA da garantia de ' + o.guarantee_days + ' dias.'),
+        dados: { pedido_id: o.id, email: cli.email, valor: o.amount, curso: o.course, dentro_garantia: !!o.in_guarantee } });
+      return { ok: true, dentro_da_garantia: !!o.in_guarantee, instrucao: 'Avise que o pedido de reembolso foi registrado e que a equipe confirma em breve. Depois de aprovado, no Pix o valor volta em até 1 dia útil; no cartão, o estorno aparece em até 2 faturas.' };
+    }
+    if (nome === 'buscar_nas_aulas') {
+      var r = BR.chamar('bridgeSearch', { q: U.cap(inp.pergunta, 200), course: U.str(inp.curso) });
+      return (r.results || []).length ? r : { resultados: 0, instrucao: 'Nada nas aulas sobre isso. Diga com honestidade e oriente como sugestão sua.' };
+    }
+    return null;
+  };
 
   /** Executa uma ferramenta. ctx: { c, ag, teste, passou, canal } */
   IA.executar = function (nome, inp, ctx) {
@@ -3174,7 +3318,8 @@ function PrumoLogica(P) {
       ctx.retorno = { em: U.somaTempo(P.agora(), h * 60), motivo: U.cap(inp.motivo, 300) };
       return { ok: true, em_horas: h };
     }
-    return { erro: 'Ferramenta desconhecida.' };
+    var extra = IA.executarExtra(nome, inp, ctx);
+    return extra || { erro: 'Ferramenta desconhecida.' };
   };
 
   /** Move (ou cria) o negócio aberto do contato para a etapa cujo nome contém "etapa". */
@@ -3233,7 +3378,7 @@ function PrumoLogica(P) {
   IA.historico = function (c, notaRetorno) {
     var ms = P.filtrar('Mensagens', 'contato_id', c.id).filter(function (m) { return m.status !== 'erro'; })
       .sort(function (a, b) { return a.criado_em < b.criado_em ? -1 : a.criado_em > b.criado_em ? 1 : 0; }).slice(-40);
-    if (!ms.length) return null;
+    if (!ms.length) return notaRetorno ? [{ role: 'user', content: [{ type: 'text', text: '[nota do sistema, não é mensagem do cliente: ' + notaRetorno + ']' }] }] : null;
     var ultima = ms[ms.length - 1];
     if (ultima.direcao !== 'in' && !notaRetorno) return null;
     var out = [];
@@ -3256,7 +3401,7 @@ function PrumoLogica(P) {
       model: IA.MODELOS[k.IA_MODELO] ? k.IA_MODELO : 'claude-opus-5-5',
       max_tokens: 4000,
       output_config: { effort: ['low', 'medium', 'high'].indexOf(k.IA_ESFORCO) >= 0 ? k.IA_ESFORCO : 'low' },
-      tools: IA.FERRAMENTAS,
+      tools: IA.ferramentasDe(ag),
       system: [{ type: 'text', text: IA.promptFixo(ag), cache_control: { type: 'ephemeral', ttl: '1h' } }, { type: 'text', text: IA.promptContato(c, ag, extra) }],
       messages: msgs
     };
@@ -3335,11 +3480,15 @@ function PrumoLogica(P) {
       if (!ag || ag.ativo !== 'SIM' || c.optout === 'SIM' || c.ia_estado === 'humano' || roboPausado(c) || !IA.canalOk(canalDe(c))) return limpar();
       var kd = 'ia_dia_' + P.agora().slice(0, 10), feitas = Number(P.cache.get(kd) || 0);
       if (feitas >= (U.num(cfg().IA_LIMITE_DIA) || 300)) { hist(c.id, '', null, 'ia_erro', 'Limite diário de respostas da IA atingido'); return limpar(); }
-      var cpR = camposDe(c), nota = c.ia_estado === 'retorno' ? 'retorno agendado por você: ' + (cpR.ia_retorno || 'acompanhar a conversa') + '. O cliente não respondeu desde a sua última mensagem. Escreva uma mensagem curta e natural retomando a conversa, sem pressionar, ou responda SILENCIO se não fizer sentido.' : '';
+      var cpR = camposDe(c);
+      if ((cpR.ia_proativo === 'SIM' || (c.ia_estado === 'retorno' && !cpR.ia_nota)) && !dentroDoHorario(P.agora())) { // fora do horário de envio: tenta de novo mais tarde
+        P.atualizar('Contatos', c.id, { ia_acordar_em: U.somaTempo(P.agora(), 30) }); return null;
+      }
+      var nota = cpR.ia_nota || (c.ia_estado === 'retorno' ? 'retorno agendado por você: ' + (cpR.ia_retorno || 'acompanhar a conversa') + '. O cliente não respondeu desde a sua última mensagem. Escreva uma mensagem curta e natural retomando a conversa, sem pressionar, ou responda SILENCIO se não fizer sentido.' : '');
       var msgs = IA.historico(c, nota);
       if (!msgs) return limpar();
       var nIn = P.filtrar('Mensagens', 'contato_id', c.id).filter(function (m) { return m.direcao === 'in'; }).length;
-      return { c: c, ag: ag, req: IA.pedido(c, ag, msgs), nIn: nIn, modelo: cfg().IA_MODELO };
+      return { c: c, ag: ag, req: IA.pedido(c, ag, msgs, nota ? 'Nota do sistema para esta resposta: ' + nota : ''), nIn: nIn, modelo: cfg().IA_MODELO, consumiu: !!cpR.ia_nota || c.ia_estado === 'retorno' };
     });
     if (!prep) return null;
     var ctx = { c: prep.c, ag: prep.ag, teste: false, passou: false, retorno: null };
@@ -3388,16 +3537,26 @@ function PrumoLogica(P) {
       var mud = {};
       if (enviados) mud.nao_lidas = '0';
       var novaIn = P.filtrar('Mensagens', 'contato_id', c.id).filter(function (m) { return m.direcao === 'in'; }).length > prep.nIn;
+      var cp = camposDe(c), mexeuCp = false;
+      if (prep.consumiu) { delete cp.ia_nota; delete cp.ia_proativo; mexeuCp = true; }
       if (c.ia_estado !== 'humano') {
-        if (novaIn) { mud.ia_acordar_em = U.somaTempo(P.agora(), 0.2); mud.ia_estado = 'ativo'; } // chegou mensagem enquanto respondia
+        if (ctx.transferir) { // outra pessoa da equipe IA continua
+          var nv = ctx.transferir.ag;
+          mud.ia_agente_id = nv.id; mud.ia_estado = 'retorno'; mud.ia_acordar_em = U.somaTempo(P.agora(), 0.1);
+          if (!c.responsavel_id || IA.ehAgente(c.responsavel_id)) mud.responsavel_id = nv.usuario_id;
+          cp.ia_nota = 'você acabou de receber esta conversa de ' + ag.nome + ' (' + (IA.NOMES_PAPEIS[ag.papel] || 'vendas') + '). Resumo: ' + ctx.transferir.resumo + ' Apresente-se em uma frase e continue de onde parou, sem repetir perguntas já respondidas.'; mexeuCp = true;
+          P.atualizar('Agentes', nv.id, { conversas: String(U.num(nv.conversas) + 1) });
+          hist(c.id, '', IA.usuarioDe(ag), 'ia', 'Transferiu para ' + nv.nome + ' (' + IA.NOMES_PAPEIS[nv.papel] + '): ' + ctx.transferir.resumo);
+        } else if (novaIn) { mud.ia_acordar_em = U.somaTempo(P.agora(), 0.2); mud.ia_estado = 'ativo'; } // chegou mensagem enquanto respondia
         else if (ctx.retorno) {
           mud.ia_acordar_em = ctx.retorno.em; mud.ia_estado = 'retorno';
-          var cp = camposDe(c); cp.ia_retorno = ctx.retorno.motivo; mud.campos = JSON.stringify(cp);
+          cp.ia_retorno = ctx.retorno.motivo; mexeuCp = true;
         } else {
           if (c.ia_acordar_em === lease) mud.ia_acordar_em = '';
           if (c.ia_estado === 'retorno') mud.ia_estado = 'ativo';
         }
       }
+      if (mexeuCp) mud.campos = JSON.stringify(cp);
       if (Object.keys(mud).length) P.atualizar('Contatos', c.id, mud);
       return { id: id, baloes: enviados, ferramentas: r.ferramentas.map(function (f) { return f.nome; }), custo: custo };
     });
@@ -3453,10 +3612,12 @@ function PrumoLogica(P) {
     var negs = P.tabela('Negocios'), contatos = P.tabela('Contatos');
     return {
       config: { IA_ATIVA: k.IA_ATIVA, IA_MODELO: k.IA_MODELO, IA_ESFORCO: k.IA_ESFORCO, IA_ESPERA_SEG: k.IA_ESPERA_SEG, IA_LIMITE_DIA: k.IA_LIMITE_DIA, IA_ATENDE: k.IA_ATENDE,
-        IA_CHAVE: k.IA_CHAVE ? '••••••••' + U.str(k.IA_CHAVE).slice(-4) : '', IA_ERRO: k.IA_ERRO || '' },
+        IA_CHAVE: k.IA_CHAVE ? '••••••••' + U.str(k.IA_CHAVE).slice(-4) : '', IA_ERRO: k.IA_ERRO || '', IA_RECUPERAR: k.IA_RECUPERAR, IA_RECUPERAR_MIN: k.IA_RECUPERAR_MIN,
+        ASSIST_ATIVO: k.ASSIST_ATIVO, ASSIST_HORA: k.ASSIST_HORA, ASSIST_EMAIL: k.ASSIST_EMAIL, ASSIST_WHATS: k.ASSIST_WHATS, ASSIST_ULTIMO: k.ASSIST_ULTIMO },
+      pendentes: IA.pendentes(),
       modelos: Object.keys(IA.MODELOS).map(function (m) { return { id: m, nome: IA.MODELOS[m].nome }; }),
       hoje: Number(P.cache.get('ia_dia_' + P.agora().slice(0, 10)) || 0),
-      canais: { whatsapp: WA.temApi(), instagram: IG.ativo(), site: cfg().CHAT_ATIVO === 'SIM' },
+      canais: { whatsapp: WA.temApi(), instagram: IG.ativo(), site: cfg().CHAT_ATIVO === 'SIM', aluno: IA.canalOk('aluno') },
       agentes: IA.lista().map(function (a) {
         var ganhos = negs.filter(function (n) { return n.responsavel_id === a.usuario_id && n.status === 'ganho'; });
         var doMes = ganhos.filter(function (n) { return U.str(n.fechado_em).slice(0, 7) === mes; });
@@ -3470,13 +3631,193 @@ function PrumoLogica(P) {
     };
   };
 
+  /* Recuperação ativa: a equipe de recuperação chama sozinha quem travou (só no WhatsApp com API). */
+  IA.NOTAS_EVENTO = {
+    carrinho_abandonado: 'primeiro contato de recuperação. A pessoa começou a comprar {curso} e não concluiu ({situacao}). Link do checkout: {link_checkout}. Escreva uma mensagem curta e natural se apresentando e perguntando se ficou alguma dúvida. Não mande o link de cara; sem pressão.',
+    pix_expirado: 'primeiro contato de recuperação. O Pix de {curso} venceu sem pagamento. Link do checkout: {link_checkout}. Escreva uma mensagem curta se apresentando e oferecendo ajuda para concluir (gerar um Pix novo pelo link).',
+    recusado: 'primeiro contato de recuperação. O pagamento de {curso} no cartão foi recusado. Link do checkout: {link_checkout}. Escreva uma mensagem curta oferecendo ajuda: tentar outro cartão ou pagar por Pix.',
+    aluno_parado: 'primeiro contato com um aluno que parou de estudar ({situacao}). Puxe conversa leve para entender o que travou e ajudar a retomar. Nada de venda agora.',
+    lista_espera: 'o curso {curso} que a pessoa esperava (lista de espera) acabou de abrir. Avise com entusiasmo contido e ofereça tirar dúvidas. Link: {link_curso}.'
+  };
+  IA.EQUIPE_EVENTO = { carrinho_abandonado: 'recuperacao|vendas', pix_expirado: 'recuperacao|vendas', recusado: 'recuperacao|vendas', aluno_parado: 'recuperacao|consultor|suporte', lista_espera: 'recuperacao|vendas' };
+  IA.aoEvento = function (c, ev) {
+    if (!IA.ativa()) return;
+    if (ev.evento === 'compra_aprovada' || ev.evento === 'reembolso') { // comprou: para o acompanhamento de recuperação
+      var cp0 = camposDe(c);
+      if (c.ia_estado === 'retorno' || cp0.ia_proativo) { delete cp0.ia_proativo; delete cp0.ia_nota; P.atualizar('Contatos', c.id, { ia_estado: c.ia_estado === 'humano' ? 'humano' : 'ativo', ia_acordar_em: '', campos: JSON.stringify(cp0) }); }
+      return;
+    }
+    var nota = IA.NOTAS_EVENTO[ev.evento];
+    if (!nota || cfg().IA_RECUPERAR === 'NAO') return;
+    c = contatoPorId(c.id) || c;
+    if (c.optout === 'SIM' || c.ia_estado === 'humano' || roboPausado(c) || !c.telefone || canalDe(c) !== 'whatsapp' || !WA.temApi()) return;
+    if (usaMeta() && !janelaAberta(c) && !gratisAgora(c)) return; // API oficial: sem janela só modelo aprovado
+    var agora = P.agora();
+    if (c.ia_agente_id && c.ultima_msg_em > U.somaTempo(agora, -120)) return; // já está em conversa
+    if (P.tabela('Execucoes').some(function (e) { return e.contato_id === c.id && e.criado_em >= U.somaTempo(agora, -2) && e.status !== 'cancelada'; })) return; // uma automação já cuidou
+    var ag = IA.escolher('whatsapp', c, IA.EQUIPE_EVENTO[ev.evento]);
+    if (!ag) return;
+    var cp = camposDe(c);
+    cp.ia_nota = montarTexto(nota, c, null, { curso: ev.produto || cp.curso || 'o curso', situacao: cp.situacao || 'sem detalhe' });
+    cp.ia_proativo = 'SIM';
+    var mud = { ia_estado: 'retorno', ia_acordar_em: U.somaTempo(agora, Math.max(0, U.num(cfg().IA_RECUPERAR_MIN))), campos: JSON.stringify(cp) };
+    if (c.ia_agente_id !== ag.id) { mud.ia_agente_id = ag.id; P.atualizar('Agentes', ag.id, { conversas: String(U.num(ag.conversas) + 1) }); }
+    if (!c.responsavel_id) mud.responsavel_id = ag.usuario_id;
+    P.atualizar('Contatos', c.id, mud);
+    Object.keys(mud).forEach(function (k) { c[k] = mud[k]; });
+    hist(c.id, '', IA.usuarioDe(ag), 'ia', ag.nome + ' vai chamar este contato (' + (EVENTO_ROTULO[ev.evento] || ev.evento) + ')');
+  };
+
+  /* Caixa de Aprovação: o que a IA não pode decidir sozinha. */
+  IA.decidir = function (id, aprovar, user, nota) {
+    var a = P.tabela('Aprovacoes').filter(function (x) { return x.id === id; })[0];
+    if (!a) throw new Error('Pedido não encontrado.');
+    if (a.status !== 'pendente') throw new Error('Este pedido já foi decidido.');
+    var d = U.json(a.dados, {}) || {}, c = a.contato_id ? contatoPorId(a.contato_id) : null, resultado = '';
+    if (aprovar && a.tipo === 'reembolso') {
+      var r = BR.chamar('bridgeRefund', { order_id: d.pedido_id, email: d.email });
+      resultado = 'Reembolsado ' + brlIA(r.amount) + ' na BRASA';
+    }
+    var msg = aprovar ? (d.msg_aprovado || (a.tipo === 'reembolso' ? 'Oi, {primeiro_nome}! Seu reembolso de ' + (d.curso || 'curso') + ' foi aprovado. No Pix o valor volta em até 1 dia útil; no cartão, o estorno aparece em até 2 faturas. Qualquer coisa, estou por aqui.' : ''))
+      : (d.msg_recusado || (a.tipo === 'reembolso' ? 'Oi, {primeiro_nome}! Analisamos seu pedido de reembolso e, desta vez, não foi possível aprová-lo' + (nota ? ': ' + nota : '.') + ' Se quiser, alguém da equipe conversa com você por aqui.' : ''));
+    if (msg && c) {
+      var ag = IA.porId(a.agente_id);
+      try { enviarParaContato(c, montarTexto(msg, c, user), { user: ag ? IA.usuarioDe(ag) : user, origem: ag ? 'ia' : 'manual' }); resultado += (resultado ? '. ' : '') + 'Cliente avisado'; }
+      catch (e) { resultado += (resultado ? '. ' : '') + 'Não deu para avisar o cliente: ' + e.message; P.inserir('Tarefas', { id: P.id('T'), titulo: 'Avisar ' + c.nome + ' sobre: ' + a.titulo, tipo: 'whatsapp', contato_id: c.id, negocio_id: '', responsavel_id: user.id, vence_em: P.agora(), feita: 'NAO', notas: msg, criado_em: P.agora() }); }
+    }
+    var mud = { status: aprovar ? 'aprovada' : 'recusada', resultado: U.cap(resultado + (nota ? (resultado ? '. ' : '') + 'Nota: ' + nota : ''), 500), decidido_em: P.agora(), decidido_por: user.nome };
+    P.atualizar('Aprovacoes', a.id, mud);
+    if (c) hist(c.id, '', user, 'aprovacao', (aprovar ? 'Aprovou: ' : 'Recusou: ') + a.titulo + (resultado ? ' (' + resultado + ')' : ''));
+    return Object.assign(a, mud);
+  };
+  IA.pendentes = function () { return P.tabela('Aprovacoes').filter(function (a) { return a.status === 'pendente'; }).length; };
+
+  /* Assistente do dono: números do período, resumo diário e conversa. */
+  IA.metricas = function (de, ate) {
+    de = U.str(de).slice(0, 10); ate = U.str(ate).slice(0, 10) || de;
+    var dentro = function (iso) { var d = U.str(iso).slice(0, 10); return d && d >= de && d <= ate; };
+    var negs = P.tabela('Negocios'), ags = IA.usuarios(), us = {};
+    P.tabela('Usuarios').forEach(function (u) { us[u.id] = u.nome; });
+    var ganhos = negs.filter(function (n) { return n.status === 'ganho' && dentro(n.fechado_em); });
+    var porVend = {};
+    ganhos.forEach(function (n) { var k = us[n.responsavel_id] || 'Sem responsável'; porVend[k] = porVend[k] || { vendas: 0, receita: 0 }; porVend[k].vendas++; porVend[k].receita += U.num(n.valor); });
+    var msgs = P.tabela('Mensagens').filter(function (m) { return dentro(m.criado_em); });
+    var hs = P.tabela('Historico').filter(function (h) { return dentro(h.data); });
+    var agora = P.agora();
+    return {
+      periodo: de === ate ? de : de + ' a ' + ate,
+      novos_contatos: P.tabela('Contatos').filter(function (c) { return dentro(c.criado_em); }).length,
+      mensagens_recebidas: msgs.filter(function (m) { return m.direcao === 'in'; }).length,
+      respostas_da_ia: msgs.filter(function (m) { return m.origem === 'ia'; }).length,
+      respostas_da_equipe: msgs.filter(function (m) { return m.direcao === 'out' && /manual|celular|painel/.test(m.origem); }).length,
+      vendas: ganhos.length, receita: Math.round(ganhos.reduce(function (s, n) { return s + U.num(n.valor); }, 0) * 100) / 100,
+      vendas_por_vendedor: porVend,
+      eventos_brasa: hs.filter(function (h) { return h.acao === 'compra'; }).map(function (h) { return h.detalhe; }).slice(0, 40),
+      passadas_para_humano: hs.filter(function (h) { return h.acao === 'ia' && /^Passou para/.test(h.detalhe); }).length,
+      erros_da_ia: hs.filter(function (h) { return h.acao === 'ia_erro'; }).length,
+      aprovacoes_pendentes: P.tabela('Aprovacoes').filter(function (a) { return a.status === 'pendente'; }).map(function (a) { return a.titulo; }),
+      esperando_pessoa: P.tabela('Contatos').filter(function (c) { return c.ia_estado === 'humano' && c.ultima_direcao === 'in'; }).map(function (c) { return c.nome + ' (' + (us[c.responsavel_id] || 'sem responsável') + ')'; }).slice(0, 20),
+      tarefas_atrasadas: P.tabela('Tarefas').filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em < agora; }).length,
+      negocios_abertos: negs.filter(function (n) { return n.status === 'aberto'; }).length,
+      equipe_ia: IA.lista().map(function (a) { return a.nome + ' (' + (IA.NOMES_PAPEIS[a.papel] || 'vendas') + ', ' + (a.ativo === 'SIM' ? 'ativa' : 'pausada') + ')'; }),
+      ia_ligada: IA.ativa(), qtd_agentes_ia: Object.keys(ags).length
+    };
+  };
+  IA.ASSIST_SISTEMA = 'Você é a assistente pessoal do dono da BRASA (plataforma de cursos online), dentro do BRASA CRM. Responda em português do Brasil, direto, como uma chefe de gabinete: números primeiro, depois o que precisa de atenção e o que você recomenda. Sem textão, sem markdown pesado (use no máximo listas curtas com hífen). Use as ferramentas para buscar os números; nunca invente dados. Você só lê: não envia mensagens nem muda nada.';
+  IA.ASSIST_FERR = [
+    { name: 'metricas', description: 'Números do CRM num período: contatos novos, mensagens, respostas da IA e da equipe, vendas e receita por vendedor, eventos da BRASA, passagens para humano, erros, aprovações pendentes, quem espera resposta de uma pessoa, tarefas atrasadas.',
+      input_schema: { type: 'object', properties: { de: { type: 'string', description: 'AAAA-MM-DD' }, ate: { type: 'string', description: 'AAAA-MM-DD' } }, required: ['de'] } },
+    { name: 'buscar_contatos', description: 'Procura contatos pelo nome, e-mail, telefone ou tag.',
+      input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
+    { name: 'desempenho_da_equipe_ia', description: 'Conversas, mensagens, vendas, receita, passagens e custo de cada pessoa da equipe IA.', input_schema: { type: 'object', properties: {} } }
+  ];
+  IA.assistFerramenta = function (nome, inp) {
+    if (nome === 'metricas') return IA.metricas(inp.de, inp.ate);
+    if (nome === 'buscar_contatos') {
+      var q = U.norm(inp.busca), us = {};
+      P.tabela('Usuarios').forEach(function (u) { us[u.id] = u.nome; });
+      return P.tabela('Contatos').filter(function (c) { return U.norm([c.nome, c.email, c.telefone, c.tags].join(' ')).indexOf(q) >= 0; }).slice(0, 10)
+        .map(function (c) { return { nome: c.nome, status: c.status, tags: c.tags, responsavel: us[c.responsavel_id] || '', ultima_msg: c.ultima_msg, ultima_msg_em: c.ultima_msg_em, ia: c.ia_estado || '', resumo_ia: c.ia_resumo || '' }; });
+    }
+    if (nome === 'desempenho_da_equipe_ia') return IA.painel().agentes.map(function (a) { return { nome: a.nome, equipe: a.papel, ativa: a.ativo, conversas: a.conversas, mensagens: a.mensagens, vendas_mes: a.vendas_mes, receita_mes: a.receita_mes, vendas_total: a.vendas, passadas: a.passadas, custo_usd: a.custo }; });
+    return { erro: 'Ferramenta desconhecida.' };
+  };
+  IA.assistente = function (conversa, trava) {
+    trava = trava || function (f) { return f(); };
+    var msgs = [];
+    (conversa || []).slice(-20).forEach(function (m) {
+      var role = m.de === 'assistente' ? 'assistant' : 'user', t = U.cap(U.str(m.texto), 4000);
+      if (!t) return;
+      if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content += '\n\n' + t; else msgs.push({ role: role, content: t });
+    });
+    if (!msgs.length || msgs[0].role !== 'user' || msgs[msgs.length - 1].role !== 'user') throw new Error('Escreva sua pergunta.');
+    var agora = P.agora();
+    var req = { model: IA.MODELOS[cfg().IA_MODELO] ? cfg().IA_MODELO : 'claude-opus-5-5', max_tokens: 4000, output_config: { effort: 'low' }, tools: IA.ASSIST_FERR,
+      system: [{ type: 'text', text: IA.ASSIST_SISTEMA, cache_control: { type: 'ephemeral', ttl: '1h' } }, { type: 'text', text: 'Agora: ' + DIAS_IA[U.diaSemana(agora)] + ', ' + agora.slice(0, 10) + ' ' + agora.slice(11, 16) + ' (horário de Brasília).' }], messages: msgs };
+    var uso = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, texto = '', usadas = [];
+    for (var v = 0; v < 6; v++) {
+      var r = IA.chamar(req);
+      Object.keys(uso).forEach(function (k) { uso[k] += (r.usage && r.usage[k]) || 0; });
+      req.messages.push({ role: 'assistant', content: r.content });
+      if (r.stop_reason === 'tool_use') {
+        var bl = r.content.filter(function (x) { return x.type === 'tool_use'; });
+        req.messages.push({ role: 'user', content: trava(function () { return bl.map(function (b) { usadas.push(b.name); var o; try { o = IA.assistFerramenta(b.name, b.input || {}); } catch (e) { o = { erro: e.message }; } return { type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(o) }; }); }) });
+        continue;
+      }
+      texto = r.content.filter(function (x) { return x.type === 'text'; }).map(function (x) { return x.text; }).join('\n\n').trim();
+      break;
+    }
+    return { resposta: texto || 'Não consegui responder agora.', ferramentas: usadas, custo: IA.custo(req.model, uso) };
+  };
+  /** Resumo diário: roda no gatilho, uma vez por dia, depois da hora marcada. */
+  IA.resumoDiario = function (trava, forcar) {
+    trava = trava || function (f) { return f(); };
+    var ok = trava(function () {
+      cfgMemo = null;
+      var k = cfg(), hoje = P.agora().slice(0, 10);
+      if (!forcar && (k.ASSIST_ATIVO !== 'SIM' || !IA.ativa() || k.ASSIST_ULTIMO === hoje || P.agora().slice(11, 16) < (k.ASSIST_HORA || '08:00'))) return false;
+      if (!forcar) salvarCfg({ ASSIST_ULTIMO: hoje });
+      return true;
+    });
+    if (!ok) return null;
+    var ontem = U.somaTempo(P.agora(), -1440).slice(0, 10);
+    var r = IA.assistente([{ de: 'eu', texto: 'Monte meu resumo de ontem (' + ontem + ') para eu ler no celular: até 12 linhas. Comece com vendas e receita, depois o que precisa de mim (aprovações, quem espera uma pessoa, tarefas atrasadas, erros) e termine com as 3 prioridades de hoje.' }], trava);
+    if (forcar) return r;
+    trava(function () {
+      var k = cfg(), envios = [];
+      var para = U.str(k.ASSIST_EMAIL).trim() || (P.tabela('Usuarios').filter(function (u) { return u.perfil === 'admin' && u.ativo === 'SIM'; })[0] || {}).email;
+      if (para && P.email && P.email.gmail) { try { P.email.gmail({ para: para, assunto: 'Resumo de ontem - ' + U.str(k.NOME), texto: r.resposta, html: '<div style="font-family:sans-serif;white-space:pre-wrap;font-size:15px;line-height:1.5">' + EM.esc(r.resposta) + '</div>', nome: k.NOME }); envios.push('e-mail'); } catch (e) { hist('', '', null, 'ia_erro', 'Resumo por e-mail: ' + e.message); } }
+      if (k.ASSIST_WHATS && WA.temApi()) { try { WA.enviar(U.telWa(k.ASSIST_WHATS), r.resposta); envios.push('WhatsApp'); } catch (e2) { hist('', '', null, 'ia_erro', 'Resumo por WhatsApp: ' + e2.message); } }
+      hist('', '', null, 'assistente', 'Resumo diário enviado' + (envios.length ? ' por ' + envios.join(' e ') : ' (sem destino configurado)'));
+    });
+    return r;
+  };
+
+  R['aprovacao.listar'] = function (u, b) {
+    exige(u, 'todos');
+    var st = b.status || 'pendente', cs = {}, ags = {};
+    P.tabela('Contatos').forEach(function (c) { cs[c.id] = c.nome; });
+    IA.lista().forEach(function (a) { ags[a.id] = a.nome; });
+    return P.tabela('Aprovacoes').filter(function (a) { return st === 'todas' ? true : st === 'decididas' ? a.status !== 'pendente' : a.status === st; })
+      .sort(function (a, b2) { return a.criado_em < b2.criado_em ? 1 : -1; }).slice(0, 200)
+      .map(function (a) { var o = Object.assign({}, a); o.contato_nome = cs[a.contato_id] || ''; o.agente_nome = ags[a.agente_id] || ''; o.dados = U.json(a.dados, {}); return o; });
+  };
+  R['aprovacao.decidir'] = function (u, b) {
+    exige(u, 'todos');
+    var a = P.tabela('Aprovacoes').filter(function (x) { return x.id === b.id; })[0];
+    if (a && a.tipo === 'reembolso' && !pode(u, 'financeiro')) throw new Error('Só quem tem acesso ao financeiro aprova reembolso.');
+    return IA.decidir(b.id, !!b.aprovar, u, U.cap(b.nota, 500));
+  };
+  R['assistente.perguntar'] = function (u, b) { exige(u, 'relatorios'); if (!U.str(cfg().IA_CHAVE).trim()) throw new Error('Cole a chave da API do Claude em Equipe IA antes.'); return IA.assistente(b.conversa); };
+  R['assistente.resumo'] = function (u) { exige(u, 'relatorios'); if (!U.str(cfg().IA_CHAVE).trim()) throw new Error('Cole a chave da API do Claude em Equipe IA antes.'); return IA.resumoDiario(null, true); };
+
   R['ia.painel'] = function (u) { exige(u, 'ajustes'); return IA.painel(); };
   R['ia.agente.salvar'] = function (u, b) {
     exige(u, 'ajustes');
     var d = b.agente || {}, agora = P.agora();
     var nome = U.cap(U.str(d.nome).trim(), 60);
     if (!nome) throw new Error('Dê um nome para a vendedora.');
-    var canais = U.lista(d.canais).filter(function (x) { return ['whatsapp', 'instagram', 'site'].indexOf(x) >= 0; });
+    var canais = U.lista(d.canais).filter(function (x) { return ['whatsapp', 'instagram', 'site', 'aluno'].indexOf(x) >= 0; });
     if (!canais.length) throw new Error('Escolha pelo menos um canal.');
     var dados = { nome: nome, ativo: d.ativo === 'NAO' ? 'NAO' : 'SIM', papel: IA.PAPEIS[d.papel] ? d.papel : 'vendas', canais: canais.join(', '),
       personalidade: U.cap(d.personalidade, 3000), regras: U.cap(d.regras, 4000), conhecimento: U.cap(d.conhecimento, 20000),
@@ -3961,7 +4302,7 @@ function PrumoLogica(P) {
   return {
     U: U, WA: WA, IG: IG, INT: INT, EM: EM, FIN: FIN, CHAT: CHAT, SUP: SUP, cfg: cfg, arquivar: arquivar, receberRastreio: receberRastreio, salvarCfg: salvarCfg, rotear: rotear, receberWebhook: receberWebhook, trabalhar: trabalhar,
     semear: semear, receber: receber, montarTexto: montarTexto, filtrarContatos: filtrarContatos, versao: PRUMO_VERSAO,
-    IA: IA, trabalharIA: function (trava, max) { return IA.rodada(trava, max); }
+    IA: IA, trabalharIA: function (trava, max) { try { IA.resumoDiario(trava); } catch (e) { hist('', '', null, 'ia_erro', 'Resumo diário: ' + e.message); } return IA.rodada(trava, max); }
   };
 }
 

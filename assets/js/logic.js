@@ -27,7 +27,7 @@ var BrasaLogic = (function () {
     Users: ['id', 'created_at', 'updated_at', 'name', 'email', 'phone', 'pass_hash', 'salt', 'roles', 'status', 'avatar', 'avatar_color', 'aff_code', 'pix_key', 'instagram', 'xp', 'streak', 'streak_day', 'badges', 'my_list', 'last_seen', 'reset_code', 'reset_exp', 'first_token', 'notes', 'seller_commission', 'seller_max_discount'],
     Courses: ['id', 'created_at', 'updated_at', 'slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'lp', 'lp_status', 'lp_updated_at', 'lp_static_url', 'seo_title', 'seo_desc', 'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes', 'released_at', 'ads', 'ads_updated_at'],
     Seasons: ['id', 'created_at', 'course_id', 'order', 'title', 'description', 'release_mode', 'release_days', 'release_at'],
-    Lessons: ['id', 'created_at', 'updated_at', 'course_id', 'season_id', 'order', 'title', 'description', 'video_url', 'duration_min', 'thumb', 'materials', 'free_preview', 'xp'],
+    Lessons: ['id', 'created_at', 'updated_at', 'course_id', 'season_id', 'order', 'title', 'description', 'video_url', 'duration_min', 'thumb', 'materials', 'free_preview', 'xp', 'content'],
     Enrollments: ['id', 'created_at', 'user_id', 'course_id', 'expires_at', 'source', 'order_id', 'status'],
     Progress: ['id', 'created_at', 'updated_at', 'user_id', 'course_id', 'lesson_id', 'status', 'position', 'completed_at', 'note', 'liked'],
     Orders: ['id', 'created_at', 'updated_at', 'paid_at', 'data_br', 'status', 'course_id', 'course_title', 'user_id', 'name', 'email', 'phone', 'doc', 'price', 'discount', 'coupon', 'amount', 'method', 'installments', 'mp_payment_id', 'mp_preference_id', 'status_detail', 'fee', 'net', 'aff_id', 'aff_code', 'commission', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'src', 'fbp', 'fbc', 'ua', 'recovery_sent', 'capi_sent', 'checked_at', 'bump_type', 'bump_ref', 'bump_title', 'bump_amount', 'bump_delivery', 'parent_order_id', 'offer_id', 'seller_id', 'seller_commission', 'banner_id', 'card_brand'],
@@ -1542,6 +1542,7 @@ var BrasaLogic = (function () {
       need(text, 'Escreva sua mensagem.');
       rateLimit('msg:' + u.id, 20, 300);
       var m = T('Messages').insert({ thread: u.id, from: 'user', text: text, read_admin: false, read_user: true });
+      crmSend('chat_aluno', { nome: u.name, email: u.email, telefone: u.phone, texto: text, msg_id: m.id, afiliado: hasRole(u, 'affiliate') });
       return { message: { id: m.id, ts: m.ts, from: 'me', text: m.text } };
     };
 
@@ -1861,7 +1862,7 @@ var BrasaLogic = (function () {
       var yt = video.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{6,})/);
       if (!thumb && yt) thumb = 'https://img.youtube.com/vi/' + yt[1] + '/hqdefault.jpg';
       var mats = Array.isArray(l.materials) ? l.materials.filter(function (m) { return m && trim(m.url); }).map(function (m) { return { name: trim(m.name) || 'Material', url: trim(m.url) }; }) : J(l.materials, []);
-      var patch = { course_id: s.course_id, season_id: s.id, title: trim(l.title).slice(0, 160), description: String(l.description || '').slice(0, 4000), video_url: video, duration_min: clamp(l.duration_min || 0, 0, 1000), thumb: thumb, materials: JSON.stringify(mats), free_preview: !!l.free_preview, xp: clamp(l.xp || 50, 0, 1000) };
+      var patch = { course_id: s.course_id, season_id: s.id, title: trim(l.title).slice(0, 160), description: String(l.description || '').slice(0, 4000), content: String(l.content || '').slice(0, 45000), video_url: video, duration_min: clamp(l.duration_min || 0, 0, 1000), thumb: thumb, materials: JSON.stringify(mats), free_preview: !!l.free_preview, xp: clamp(l.xp || 50, 0, 1000) };
       var saved;
       if (l.id) { need(T('Lessons').get(l.id), 'Aula não encontrada.', 'NOT_FOUND'); saved = T('Lessons').update(l.id, patch); }
       else {
@@ -2238,6 +2239,7 @@ var BrasaLogic = (function () {
       var u = T('Users').get(trim(req.user_id)); need(u, 'Conversa não encontrada.', 'NOT_FOUND');
       var text = trim(req.text).slice(0, 4000); need(text, 'Escreva a resposta.');
       var m = T('Messages').insert({ thread: u.id, from: 'admin', text: text, read_admin: true, read_user: false });
+      crmSend('chat_equipe', { nome: u.name, email: u.email, telefone: u.phone, texto: text, msg_id: m.id });
       if (now() - (u.last_seen || 0) > 30 * 60000) sendTpl('support_reply', u.email, { nome: u.name, primeiro_nome: firstName(u.name), mensagem: text }, siteUrl() + (hasRole(u, 'affiliate') ? 'afiliado.html#/suporte' : 'index.html#/suporte'), u.id);
       return { message: { id: m.id, ts: m.ts, from: 'admin', text: m.text } };
     };
@@ -2655,6 +2657,103 @@ var BrasaLogic = (function () {
           };
         })
       };
+    };
+    /* ----- ponte para a equipe IA do CRM (suporte e consultores) ----- */
+    function bridgeUser(req) {
+      var email = normEmail(req.email), u = email ? findUserByEmail(email) : null;
+      if (!u && digits(req.phone).length >= 10) { var tail = digits(req.phone).slice(-8); u = T('Users').find(function (x) { return digits(x.phone).slice(-8) === tail; }); }
+      return u;
+    }
+    // situação do cliente: conta, cursos, progresso e pedidos (o CRM só pede para quem está verificado)
+    A.bridgeCustomer = function (req) {
+      bridgeAuth(req);
+      var u = bridgeUser(req), I = idx();
+      var email = u ? u.email : normEmail(req.email);
+      var orders = T('Orders').where(function (o) { return (u && o.user_id === u.id) || (email && o.email === email); }).sort(function (a, b) { return b.created_at - a.created_at; }).slice(0, 15);
+      if (!u && !orders.length) return { found: false };
+      var enr = u ? T('Enrollments').where(function (e) { return e.user_id === u.id; }) : [];
+      var prog = u ? T('Progress').where(function (p) { return p.user_id === u.id && p.status === 'done'; }) : [];
+      var dt = function (ts) { return ts ? new Date(ts).toISOString().slice(0, 10) : ''; };
+      return {
+        found: true, name: u ? u.name : orders[0].name, email: email, status: u ? (u.status === 'blocked' ? 'bloqueada' : 'ativa') : 'sem conta (só pedido)',
+        has_password: !!(u && u.pass_hash), created: u ? dt(u.created_at) : '', last_seen: u ? dt(u.last_seen) : '', affiliate: !!(u && hasRole(u, 'affiliate')),
+        courses: enr.map(function (e) {
+          var c = I.byId[e.course_id], total = c ? (I.seq[c.id] || []).length : 0;
+          var feitas = prog.filter(function (p) { return p.course_id === e.course_id; }).length;
+          return { course: c ? c.title : e.course_id, slug: c ? c.slug : '', since: dt(e.created_at), access_until: e.expires_at ? dt(e.expires_at) : 'vitalício', status: e.status || 'active', progress: total ? Math.round(feitas / total * 100) + '% (' + feitas + ' de ' + total + ' aulas)' : '' };
+        }),
+        orders: orders.map(function (o) {
+          var c = I.byId[o.course_id], gd = c ? (c.guarantee_days || 7) : 7, dias = o.paid_at ? Math.floor((now() - o.paid_at) / DAY) : null;
+          return { id: o.id, course: o.course_title || (c && c.title) || '', amount: o.amount, status: o.status, method: o.method, date: dt(o.created_at), paid: dt(o.paid_at),
+            in_guarantee: o.status === 'approved' && dias !== null && dias <= gd, days_since_payment: dias, guarantee_days: gd };
+        })
+      };
+    };
+    // reenvia o acesso (primeiro acesso ou código de nova senha) para o e-mail da conta: só o dono recebe
+    A.bridgeResend = function (req) {
+      bridgeAuth(req);
+      var email = normEmail(req.email);
+      need(validEmail(email), 'E-mail inválido.');
+      rateLimit('br-rs:' + email, 3, 3600);
+      var u = findUserByEmail(email);
+      if (u && u.status !== 'blocked') {
+        if (!u.pass_hash) sendTpl('access', u.email, { nome: u.name, primeiro_nome: firstName(u.name) }, linkAccess(u), u.id);
+        else {
+          var code = rand(6, '0123456789');
+          T('Users').update(u.id, { reset_code: env.sha256(code + u.salt), reset_exp: now() + 30 * 60000 });
+          sendTpl('code', u.email, { nome: u.name, primeiro_nome: firstName(u.name), codigo: code, codigo_html: codeHtml(code) }, '', u.id);
+        }
+      }
+      return { sent: true }; // mesma resposta com ou sem conta: não revela quem tem cadastro
+    };
+    // reembolso aprovado por uma pessoa na Caixa de Aprovação do CRM
+    A.bridgeRefund = function (req) {
+      bridgeAuth(req);
+      var o = T('Orders').get(trim(req.order_id)); need(o, 'Pedido não encontrado.', 'NOT_FOUND');
+      need(normEmail(req.email) && o.email === normEmail(req.email), 'O pedido não é deste cliente.', 'FORBIDDEN');
+      need(o.status === 'approved', 'Só é possível reembolsar pedidos aprovados (este está: ' + o.status + ').');
+      if (o.amount > 0 && o.mp_payment_id) {
+        try { env.pay.refund(o.mp_payment_id); }
+        catch (e) { throw err('O Mercado Pago recusou o reembolso: ' + String(e.message).slice(0, 160), 'PAYMENT'); }
+      }
+      reverseOrder(o, 'refunded', { status_detail: 'reembolso aprovado no CRM' });
+      return { ok: true, order_id: o.id, amount: o.amount, course: o.course_title };
+    };
+    // a equipe IA responde no chat da área do aluno
+    A.bridgeChatReply = function (req) {
+      bridgeAuth(req);
+      var u = findUserByEmail(req.email); need(u, 'Aluno não encontrado.', 'NOT_FOUND');
+      var text = trim(req.text).slice(0, 4000); need(text, 'Mensagem vazia.');
+      var m = T('Messages').insert({ thread: u.id, from: 'admin', text: text, read_admin: true, read_user: false });
+      var avisar = env.cache && !env.cache.get('br-cr:' + u.id);
+      if (avisar) env.cache.put('br-cr:' + u.id, '1', 1800);
+      if (now() - (u.last_seen || 0) > 30 * 60000 && avisar) sendTpl('support_reply', u.email, { nome: u.name, primeiro_nome: firstName(u.name), mensagem: text }, siteUrl() + (hasRole(u, 'affiliate') ? 'afiliado.html#/suporte' : 'index.html#/suporte'), u.id);
+      return { id: m.id };
+    };
+    // busca no conteúdo das aulas (título, descrição e texto da aula) para os consultores
+    A.bridgeSearch = function (req) {
+      bridgeAuth(req);
+      var I = idx(), q = String(req.q || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      var termos = q.split(/[^a-z0-9]+/).filter(function (t) { return t.length > 2; });
+      need(termos.length, 'Escreva o que procurar.');
+      var so = trim(req.course) ? (I.bySlug[trim(req.course)] || I.courses.filter(function (c) { return c.title.toLowerCase() === trim(req.course).toLowerCase(); })[0]) : null;
+      var norm = function (s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); };
+      var achados = [];
+      I.courses.forEach(function (c) {
+        if (so && c.id !== so.id) return;
+        if (c.status !== 'published' && c.status !== 'coming_soon') return;
+        (I.seq[c.id] || []).forEach(function (l) {
+          var txt = norm(l.title) + ' ' + norm(l.description) + ' ' + norm(l.content), pts = 0;
+          termos.forEach(function (t) { var n = txt.split(t).length - 1; if (n) pts += 1 + Math.min(n, 5) * 0.2 + (norm(l.title).indexOf(t) > -1 ? 1 : 0); });
+          if (pts) achados.push({ pts: pts, c: c, l: l });
+        });
+      });
+      achados.sort(function (a, b) { return b.pts - a.pts; });
+      return { results: achados.slice(0, 5).map(function (x) {
+        var corpo = String(x.l.content || x.l.description || ''), i = norm(corpo).indexOf(termos[0]);
+        var trecho = corpo.length > 1500 ? corpo.slice(Math.max(0, i - 400), Math.max(0, i - 400) + 1500) : corpo;
+        return { course: x.c.title, lesson: x.l.label + ' ' + x.l.title, text: trecho, link: siteUrl() + 'index.html#/aula/' + encodeURIComponent(x.l.id) };
+      }) };
     };
     A.bridgeOffer = function (req) {
       bridgeAuth(req);

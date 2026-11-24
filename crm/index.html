@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Bebas+Neue&family=Chakra+Petch:wght@500;600;700&family=Sedgwick+Ave+Display&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=1.4.0-brasa">
+  <link rel="stylesheet" href="css/app.css?v=1.5.0-brasa">
   <link rel="stylesheet" href="css/brasa-tema.css?v=1">
 </head>
 <body>
@@ -22,26 +22,26 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <noscript>Ative o JavaScript para usar o sistema.</noscript>
 
-  <script src="config.js?v=1.4.0-brasa"></script>
-  <script src="js/logica.js?v=1.4.0-brasa"></script>
+  <script src="config.js?v=1.5.0-brasa"></script>
+  <script src="js/logica.js?v=1.5.0-brasa"></script>
   <script>
     // O modo demonstração só é carregado quando escolhido (roda a lógica no navegador).
     (function () {
       var api = window.PRUMO.API_URL;
       try { api = api || JSON.parse(localStorage.getItem('prumo_api') || '""'); } catch (e) { }
       if (/[?&]demo=1/.test(location.search)) api = 'demo';
-      if (api === 'demo') document.write('<script src="js/demo.js?v=1.4.0-brasa"><\/script>');
+      if (api === 'demo') document.write('<script src="js/demo.js?v=1.5.0-brasa"><\/script>');
     })();
   </script>
-  <script src="js/core.js?v=1.4.0-brasa"></script>
-  <script src="js/app.js?v=1.4.0-brasa"></script>
-  <script src="js/views-crm.js?v=1.4.0-brasa"></script>
-  <script src="js/views-conversas.js?v=1.4.0-brasa"></script>
-  <script src="js/views-automacoes.js?v=1.4.0-brasa"></script>
-  <script src="js/views-marketing.js?v=1.4.0-brasa"></script>
-  <script src="js/views-email.js?v=1.4.0-brasa"></script>
-  <script src="js/views-financeiro.js?v=1.4.0-brasa"></script>
-  <script src="js/views-gestao.js?v=1.4.0-brasa"></script>
-  <script src="js/views-ia.js?v=1.4.0-brasa"></script>
+  <script src="js/core.js?v=1.5.0-brasa"></script>
+  <script src="js/app.js?v=1.5.0-brasa"></script>
+  <script src="js/views-crm.js?v=1.5.0-brasa"></script>
+  <script src="js/views-conversas.js?v=1.5.0-brasa"></script>
+  <script src="js/views-automacoes.js?v=1.5.0-brasa"></script>
+  <script src="js/views-marketing.js?v=1.5.0-brasa"></script>
+  <script src="js/views-email.js?v=1.5.0-brasa"></script>
+  <script src="js/views-financeiro.js?v=1.5.0-brasa"></script>
+  <script src="js/views-gestao.js?v=1.5.0-brasa"></script>
+  <script src="js/views-ia.js?v=1.5.0-brasa"></script>
 </body>
 </html>

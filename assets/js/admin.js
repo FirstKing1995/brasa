@@ -1160,6 +1160,7 @@
         body: String(H`<form class="stack" style="--gap:14px" novalidate>
           ${fld({ l: 'Título da aula', n: 'title', v: l.title, req: true, ph: 'Ex.: Pixel e API de Conversões', attrs: 'maxlength="160" autocomplete="off"' })}
           ${fld({ l: 'Descrição', t: 'textarea', n: 'description', v: l.description, rows: 3, ph: 'O que o aluno aprende nesta aula.' })}
+          ${fld({ l: 'Conteúdo da aula para os consultores (opcional)', t: 'textarea', n: 'content', v: l.content || '', rows: 4, ph: 'Cole a transcrição ou o resumo do método ensinado. Os consultores IA usam este texto para ajudar os alunos.' })}
           ${fld({ l: 'Endereço do vídeo', n: 'video_url', t: 'url', v: l.video_url, ph: 'https://www.youtube.com/watch?v=…', attrs: 'inputmode="url" autocomplete="off"', hint: H`<span id="vhint"></span>` })}
           <div class="grid-3 les-grid">
             ${fld({ l: 'Duração (minutos)', n: 'duration_min', t: 'number', v: l.duration_min, attrs: 'min="0" max="1000" step="1" inputmode="numeric"' })}
@@ -1182,7 +1183,7 @@
             var keepThumb = !v.thumb && /^data:/i.test(l.thumb || '') && !thumbChanged ? l.thumb : v.thumb;
             // miniatura que veio sozinha do YouTube acompanha o vídeo: se o vídeo mudou, deixa o servidor refazer
             if (lesson && !thumbChanged && /img\.youtube\.com\/vi\//.test(keepThumb || '') && String(v.video_url || '').trim() !== String(l.video_url || '').trim()) keepThumb = '';
-            var o = { season_id: v.season_id, title: v.title, description: v.description, video_url: v.video_url, duration_min: Number(v.duration_min) || 0, thumb: keepThumb, materials: mats.filter(function (x) { return String(x.url || '').trim(); }), free_preview: !!v.free_preview, xp: v.xp === '' ? 50 : Number(v.xp) };
+            var o = { season_id: v.season_id, title: v.title, description: v.description, content: v.content, video_url: v.video_url, duration_min: Number(v.duration_min) || 0, thumb: keepThumb, materials: mats.filter(function (x) { return String(x.url || '').trim(); }), free_preview: !!v.free_preview, xp: v.xp === '' ? 50 : Number(v.xp) };
             if (lesson) o.id = lesson.id;
             return B.api('adminLessonSave', { lesson: o }).then(function (r) { applyContent(r.course); B.toast(lesson ? 'Aula salva' : 'Aula criada', 'ok'); });
           }

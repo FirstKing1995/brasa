@@ -19,6 +19,17 @@
   function brasaPonte(body) {
     if (body.key !== PONTE_CHAVE) return { ok: false, error: 'Chave da ponte com o CRM inválida.' };
     if (body.action === 'bridgeCourses') return { ok: true, data: { brand: 'BRASA', courses: brasaCursos() } };
+    if (body.action === 'bridgeCustomer') {
+      var cs0 = brasaCursos()[0] || { title: 'Tráfego Sem Romance', price: 597 };
+      var dpg = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+      return { ok: true, data: { found: true, name: 'Cliente da demonstração', email: body.email || 'aluno@brasa.demo', status: 'ativa', has_password: true, created: '2026-10-01', last_seen: dpg,
+        courses: [{ course: cs0.title, slug: cs0.slug, since: dpg, access_until: 'vitalício', status: 'active', progress: '35% (7 de 20 aulas)' }],
+        orders: [{ id: 'oDEMO1', course: cs0.title, amount: cs0.price, status: 'approved', method: 'pix', date: dpg, paid: dpg, in_guarantee: true, days_since_payment: 3, guarantee_days: 7 }] } };
+    }
+    if (body.action === 'bridgeResend') return { ok: true, data: { sent: true } };
+    if (body.action === 'bridgeRefund') return { ok: true, data: { ok: true, order_id: body.order_id, amount: (brasaCursos()[0] || { price: 597 }).price } };
+    if (body.action === 'bridgeChatReply') return { ok: true, data: { id: 'g' + Date.now() } };
+    if (body.action === 'bridgeSearch') return { ok: true, data: { results: [{ course: (brasaCursos()[0] || { title: 'Tráfego Sem Romance' }).title, lesson: 'T1:E3 Público e orçamento', text: 'Comece com um público amplo, orçamento baixo por 3 dias e só então corte o que não converte. O erro mais comum é mexer na campanha antes de ela aprender.', link: new URL('../index.html#/', location.href).href }] } };
     if (body.action === 'bridgeKnowledge') {
       var base = new URL('../', location.href).href;
       return { ok: true, data: { brand: 'BRASA', tagline: 'Cursos para quem quer viver de verdade', site: base, support_email: 'suporte@brasa.demo',
@@ -60,6 +71,41 @@
     var tx = function (t) { return resp([{ type: 'text', text: t }]); };
     var ferr = function (n, inp) { return resp([{ type: 'tool_use', id: 'tu_' + Date.now() + Math.random().toString(36).slice(2, 6), name: n, input: inp }], 'tool_use'); };
     var c0 = cursos[0] || { slug: 'curso', titulo: 'o curso', preco: 497 };
+    var papel = /CONSULTORA/.test(sys) ? 'consultor' : /equipe de SUPORTE/.test(sys) ? 'suporte' : /assistente pessoal do dono/.test(sys) ? 'assistente' : 'vendas';
+    var textoDe = function (m) { return m ? String(Array.isArray(m.content) ? m.content.map(function (b) { return b.text || ''; }).join(' ') : m.content || '').toLowerCase() : ''; };
+    var pedidoOriginal = textoDe(msgs.filter(function (m) { return m.role === 'user' && !(Array.isArray(m.content) && m.content[0] && m.content[0].type === 'tool_result'); }).pop());
+    if (papel === 'assistente') {
+      if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') {
+        var mt = {}; try { mt = JSON.parse(ult.content[0].content); } catch (e) {}
+        return tx('Vendas: ' + (mt.vendas || 0) + ' (' + (mt.receita || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) + '). Contatos novos: ' + (mt.novos_contatos || 0) + '. A IA respondeu ' + (mt.respostas_da_ia || 0) + ' mensagens.\n\nPrecisa de você: ' + ((mt.aprovacoes_pendentes || []).length) + ' aprovação(ões) e ' + ((mt.esperando_pessoa || []).length) + ' conversa(s) esperando uma pessoa.\n\nPrioridades: decidir as aprovações, responder quem espera e revisar a equipe IA.');
+      }
+      var hoje = new Date(); hoje = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      var de = /semana/.test(textoDe(ult)) ? new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10) : /ontem|resumo/.test(textoDe(ult)) ? new Date(Date.now() - 864e5).toISOString().slice(0, 10) : hoje;
+      return ferr('metricas', { de: de, ate: /ontem|resumo/.test(textoDe(ult)) ? de : hoje });
+    }
+    if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result' && papel !== 'vendas') {
+      var rr = {}; try { rr = JSON.parse(ult.content[0].content); } catch (e) {}
+      if (rr.results) return tx('Isso a gente vê na aula ' + rr.results[0].lesson + ': ' + rr.results[0].text + '\n\nMe conta como está a sua campanha hoje que eu te ajudo a aplicar.');
+      if (rr.orders && /reembols|cancel|dinheiro de volta/.test(pedidoOriginal)) return ferr('pedir_reembolso', { pedido_id: rr.orders[0].id, motivo: 'Cliente pediu no chat' });
+      if (rr.orders) return tx('Achei sua conta: você está com ' + (rr.courses[0] ? rr.courses[0].course + ' (' + rr.courses[0].progress + ')' : 'acesso ativo') + '. Me conta o que está acontecendo?');
+      if (rr.dentro_da_garantia !== undefined) return tx('Pronto, registrei seu pedido de reembolso. A equipe confirma em breve e eu te aviso por aqui.');
+      if (rr.para) return tx('Vou te passar para a ' + rr.para + ', da equipe de ' + rr.equipe + ', ela continua com você agora.');
+      if (rr.instrucao && /código|acesso/.test(rr.instrucao)) return tx('Pronto! Mandei para o seu e-mail um código para criar uma senha nova. Ele vale 30 minutos; olha também no spam.');
+    }
+    if (papel === 'suporte' && !(Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result')) {
+      var ts = textoDe(ult);
+      if (/receber esta conversa/.test(ts) && /reembols|cancel|senha|acesso/.test(ts)) return ferr('consultar_cliente', {});
+      if (/receber esta conversa/.test(ts) || /receber esta conversa/.test(sys)) return tx('Oi! Aqui é a ' + nome + ', do suporte. Me passa o e-mail da sua conta que eu já resolvo.');
+      if (/senha|acesso|entrar|login/.test(ts)) return ferr('reenviar_acesso', { email: (ts.match(/[\w.+-]+@[\w-]+\.[\w.]+/) || [])[0] || 'aluno@brasa.demo' });
+      if (/reembols|cancel|dinheiro de volta/.test(ts)) return ferr('consultar_cliente', {});
+      if (/@/.test(ts)) return ferr('consultar_cliente', {});
+    }
+    if (papel === 'consultor' && !(Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result')) {
+      var tc = textoDe(ult);
+      if (/senha|acesso|pagamento|reembols|cancel/.test(tc)) return ferr('transferir', { equipe: 'suporte', resumo: 'Aluno com problema de acesso ou pagamento: ' + tc.slice(0, 120) });
+      if (/receber esta conversa/.test(tc)) return tx('Oi! Aqui é a ' + nome + ', consultora da BRASA. Em que parte do método você travou?');
+      if (tc.length > 3) return ferr('buscar_nas_aulas', { pergunta: tc.slice(0, 80) });
+    }
     if (Array.isArray(ult.content) && ult.content[0] && ult.content[0].type === 'tool_result') {
       var r = {}; try { r = JSON.parse(ult.content[0].content); } catch (e) {}
       if (r.erro) return tx('Deixa eu confirmar isso com a equipe e já te falo.');
@@ -353,14 +399,21 @@
     if (nome || cor.length === 6) salvar();
   })();
   L = PrumoLogica(P);
-  // vendedoras IA ligadas na demonstração (com o Claude simulado acima)
-  if (!db.cfg.IA_CHAVE) {
-    db.cfg.IA_CHAVE = 'sk-ant-demonstracao-0000'; db.cfg.IA_ATIVA = 'SIM'; db.cfg.IA_ESPERA_SEG = '6'; salvar();
-    try {
+  // equipe IA ligada na demonstração (com o Claude simulado acima): um de cada time
+  if (!db.cfg.IA_CHAVE) { db.cfg.IA_CHAVE = 'sk-ant-demonstracao-0000'; db.cfg.IA_ATIVA = 'SIM'; db.cfg.IA_ESPERA_SEG = '6'; db.cfg.IA_RECUPERAR_MIN = '1'; salvar(); }
+  try {
+    var papeisDemo = {}; (db.t.Agentes || []).forEach(function (a) { papeisDemo[a.papel] = 1; });
+    var faltam = [
+      { nome: 'Luna', papel: 'vendas', canais: 'whatsapp, instagram, site', cor: '#C9592F', desconto_max: 10, personalidade: 'Calorosa, segura e objetiva.' },
+      { nome: 'Mel', papel: 'recuperacao', canais: 'whatsapp', cor: '#E2A72E', desconto_max: 15, personalidade: 'Leve e prestativa.' },
+      { nome: 'Tati', papel: 'suporte', canais: 'whatsapp, aluno, site, instagram', cor: '#86B7B2', desconto_max: 0, personalidade: 'Paciente, calma e resolutiva.' },
+      { nome: 'Iara', papel: 'consultor', canais: 'aluno', cor: '#9AA84A', desconto_max: 0, personalidade: 'Mentora experiente e encorajadora.' }
+    ].filter(function (a) { return !papeisDemo[a.papel]; });
+    if (faltam.length) {
       var sa = L.rotear({ action: 'login', email: 'admin@brasa.demo', senha: 'brasa123' });
-      if (!(db.t.Agentes || []).length) L.rotear({ action: 'ia.agente.salvar', token: sa.token, agente: { nome: 'Luna', papel: 'vendas', canais: 'whatsapp, instagram, site', cor: '#C9592F', desconto_max: 10, personalidade: 'Calorosa, segura e objetiva.' } });
-    } catch (e) { console.warn('IA demo', e.message); }
-  }
+      faltam.forEach(function (a) { L.rotear({ action: 'ia.agente.salvar', token: sa.token, agente: a }); });
+    }
+  } catch (e) { console.warn('IA demo', e.message); }
   drenarBrasa();
   setInterval(function () { try { if (drenarBrasa()) window.dispatchEvent(new Event('brasa-ponte')); } catch (e) { console.warn(e); } }, 5000);
 
@@ -374,6 +427,8 @@
       });
     },
     /** Simula uma mensagem chegando pelo WhatsApp (botão na tela de conversas). */
+    /** Simula um aluno escrevendo no chat da área do aluno da BRASA. */
+    simularAluno: function (email, nome, texto) { L.receberWebhook({ src: 'vendas', k: db.cfg.VENDAS_CHAVE, fonte: 'brasa' }, { plataforma: 'BRASA', evento: 'chat_aluno', email: email, nome: nome, texto: texto, msg_id: 'g' + Date.now() }); },
     simularEntrada: function (telefone, nome, texto) { L.receber({ telefone: telefone, nome: nome, texto: texto, tipo: 'texto', wa_id: 'SIM' + Date.now() }); },
     resetar: function () { localStorage.removeItem(CHAVE); location.reload(); }
   };
