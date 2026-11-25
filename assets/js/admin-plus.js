@@ -320,6 +320,7 @@
           </div>
           <div class="offx__note" id="offx-bump-note" role="status">${noteHtml(bp)}</div>
           <div data-offx-only="product" ${hid(bt === 'product')}>${fld({ l: 'Link de entrega', f: 'bump_delivery', t: 'url', v: d.bump_delivery, ph: 'https://…', attrs: 'inputmode="url" autocomplete="off"', hint: 'Para onde a pessoa vai para acessar o produto (Drive, Notion, Hotmart…). Enviamos este link por e-mail depois do pagamento.' })}</div>
+          <div data-offx-only="product" ${hid(bt === 'product')}>${fld({ l: 'Meses de suporte (opcional)', f: 'bump_support_months', t: 'number', v: d.bump_support_months, ph: '0', attrs: 'min="0" max="36" step="1" inputmode="numeric"', hint: 'Se o adicional for Suporte e atualizações, diga quantos meses ele vale (6 ou 12). O CRM e a equipe de suporte passam a saber até quando cada cliente tem suporte.' })}</div>
           ${A.imgField({ l: 'Imagem (opcional)', f: 'bump_image', v: d.bump_image, shape: 'sq' })}
           </div>
         </div>

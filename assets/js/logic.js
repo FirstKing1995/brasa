@@ -25,12 +25,12 @@ var BrasaLogic = (function () {
   /* ---------------- esquema das abas ---------------- */
   var SCHEMA = {
     Users: ['id', 'created_at', 'updated_at', 'name', 'email', 'phone', 'pass_hash', 'salt', 'roles', 'status', 'avatar', 'avatar_color', 'aff_code', 'pix_key', 'instagram', 'xp', 'streak', 'streak_day', 'badges', 'my_list', 'last_seen', 'reset_code', 'reset_exp', 'first_token', 'notes', 'seller_commission', 'seller_max_discount'],
-    Courses: ['id', 'created_at', 'updated_at', 'slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'lp', 'lp_status', 'lp_updated_at', 'lp_static_url', 'seo_title', 'seo_desc', 'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes', 'released_at', 'ads', 'ads_updated_at'],
+    Courses: ['id', 'created_at', 'updated_at', 'slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'lp', 'lp_status', 'lp_updated_at', 'lp_static_url', 'seo_title', 'seo_desc', 'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes', 'released_at', 'ads', 'ads_updated_at', 'kind', 'bump_support_months'],
     Seasons: ['id', 'created_at', 'course_id', 'order', 'title', 'description', 'release_mode', 'release_days', 'release_at'],
     Lessons: ['id', 'created_at', 'updated_at', 'course_id', 'season_id', 'order', 'title', 'description', 'video_url', 'duration_min', 'thumb', 'materials', 'free_preview', 'xp', 'content'],
     Enrollments: ['id', 'created_at', 'user_id', 'course_id', 'expires_at', 'source', 'order_id', 'status'],
     Progress: ['id', 'created_at', 'updated_at', 'user_id', 'course_id', 'lesson_id', 'status', 'position', 'completed_at', 'note', 'liked'],
-    Orders: ['id', 'created_at', 'updated_at', 'paid_at', 'data_br', 'status', 'course_id', 'course_title', 'user_id', 'name', 'email', 'phone', 'doc', 'price', 'discount', 'coupon', 'amount', 'method', 'installments', 'mp_payment_id', 'mp_preference_id', 'status_detail', 'fee', 'net', 'aff_id', 'aff_code', 'commission', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'src', 'fbp', 'fbc', 'ua', 'recovery_sent', 'capi_sent', 'checked_at', 'bump_type', 'bump_ref', 'bump_title', 'bump_amount', 'bump_delivery', 'parent_order_id', 'offer_id', 'seller_id', 'seller_commission', 'banner_id', 'card_brand'],
+    Orders: ['id', 'created_at', 'updated_at', 'paid_at', 'data_br', 'status', 'course_id', 'course_title', 'user_id', 'name', 'email', 'phone', 'doc', 'price', 'discount', 'coupon', 'amount', 'method', 'installments', 'mp_payment_id', 'mp_preference_id', 'status_detail', 'fee', 'net', 'aff_id', 'aff_code', 'commission', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'src', 'fbp', 'fbc', 'ua', 'recovery_sent', 'capi_sent', 'checked_at', 'bump_type', 'bump_ref', 'bump_title', 'bump_amount', 'bump_delivery', 'parent_order_id', 'offer_id', 'seller_id', 'seller_commission', 'banner_id', 'card_brand', 'support_until'],
     Affiliations: ['id', 'created_at', 'updated_at', 'user_id', 'course_id', 'status', 'commission', 'pixel_id', 'note'],
     Clicks: ['id', 'ts', 'course_id', 'aff_code', 'type', 'sid', 'utm_source', 'utm_campaign', 'ref_url'],
     Commissions: ['id', 'created_at', 'updated_at', 'order_id', 'aff_id', 'course_id', 'amount', 'status', 'release_at', 'paid_at', 'payout_id', 'kind'],
@@ -53,7 +53,7 @@ var BrasaLogic = (function () {
   ['created_at', 'updated_at', 'paid_at', 'order', 'price', 'anchor_price', 'max_installments', 'guarantee_days', 'access_days',
     'aff_commission', 'aff_cookie_days', 'lp_updated_at', 'ads_updated_at', 'scarcity_until', 'release_days', 'release_at', 'duration_min', 'xp',
     'expires_at', 'position', 'completed_at', 'discount', 'amount', 'installments', 'fee', 'net', 'commission', 'ts', 'value',
-    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at', 'tries', 'sent_at', 'spend', 'impressions', 'reach', 'link_clicks', 'lp_views', 'checkouts', 'purchases', 'purchase_value'].forEach(function (k) { NUM[k] = 1; });
+    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at', 'tries', 'sent_at', 'spend', 'impressions', 'reach', 'link_clicks', 'lp_views', 'checkouts', 'purchases', 'purchase_value', 'bump_support_months', 'support_until'].forEach(function (k) { NUM[k] = 1; });
   var BOOL = {};
   ['featured', 'show_title', 'free_preview', 'aff_enabled', 'aff_auto', 'active', 'liked', 'read_admin', 'read_user', 'recovery_sent', 'capi_sent', 'bump_enabled', 'upsell_enabled', 'done'].forEach(function (k) { BOOL[k] = 1; });
   var ID_PREFIX = { Users: 'u', Courses: 'c', Seasons: 's', Lessons: 'l', Enrollments: 'e', Progress: 'p', Orders: 'o', Affiliations: 'a', Clicks: 'k', Commissions: 'm', Payouts: 'y', Coupons: 'q', Messages: 'g', Certificates: 'x', Logs: 'z', Templates: 't', Emails: 'w', Banners: 'b', Leads: 'd', Activities: 'v', Offers: 'f', Intents: 'i', AdStats: 'n' };
@@ -869,6 +869,11 @@ var BrasaLogic = (function () {
       });
       T('Orders').update(order.id, { capi_sent: true });
     }
+    /** Sistema vendido com o adicional de suporte: o suporte vale N meses a partir do pagamento. */
+    function supportUntil(o, c) {
+      var m = c && o.bump_type === 'product' && o.bump_amount > 0 ? Number(c.bump_support_months) || 0 : 0;
+      return m > 0 ? now() + m * 30 * DAY : 0;
+    }
     function approveOrder(order, p) {
       return env.lock(function () {
         memo = {};
@@ -889,7 +894,8 @@ var BrasaLogic = (function () {
         var upd = T('Orders').update(cur.id, {
           status: 'approved', paid_at: now(), user_id: r.user.id, mp_payment_id: p.id ? String(p.id) : cur.mp_payment_id,
           status_detail: p.status_detail || 'accredited', method: cur.amount > 0 ? methodOf(p, cur.method) : 'free',
-          installments: p.installments || 1, fee: round2(fee), net: round2(net), commission: comm.aff, seller_commission: comm.seller
+          installments: p.installments || 1, fee: round2(fee), net: round2(net), commission: comm.aff, seller_commission: comm.seller,
+          support_until: supportUntil(cur, course)
         });
         var b = evalBadges(r.user, {});
         if (b.fresh.length) T('Users').update(r.user.id, { badges: b.all.join(',') });
@@ -1917,7 +1923,7 @@ var BrasaLogic = (function () {
       return { course: adminCourseView(c, I) };
     };
 
-    var COURSE_EDITABLE = ['slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'seo_title', 'seo_desc', 'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes'];
+    var COURSE_EDITABLE = ['slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'seo_title', 'seo_desc', 'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes', 'kind', 'bump_support_months'];
     A.adminCourseSave = function (req) {
       auth(req, 'admin');
       var d = req.course || {}, conf = cfg(), cur = d.id ? T('Courses').get(d.id) : null;
@@ -1937,6 +1943,8 @@ var BrasaLogic = (function () {
       if (patch.max_installments !== undefined) patch.max_installments = clamp(patch.max_installments, 1, 12);
       if (patch.guarantee_days !== undefined) patch.guarantee_days = clamp(patch.guarantee_days, 0, 60);
       if (patch.access_days !== undefined) patch.access_days = clamp(patch.access_days, 0, 3650);
+      if (patch.kind !== undefined) patch.kind = patch.kind === 'system' ? 'system' : '';
+      if (patch.bump_support_months !== undefined) patch.bump_support_months = clamp(patch.bump_support_months, 0, 36);
       if (patch.pixel_id !== undefined) patch.pixel_id = digits(patch.pixel_id);
       if (patch.status !== undefined && !{ draft: 1, published: 1, coming_soon: 1, archived: 1 }[patch.status]) patch.status = 'draft';
       if (patch.slug !== undefined || !cur) {
@@ -2725,7 +2733,8 @@ var BrasaLogic = (function () {
         nome: o.name, email: o.email, telefone: o.phone, documento: digits(o.doc), valor: o.amount, pedido_id: o.id, metodo: o.method, parcelas: o.installments || 1,
         vendedor_email: s ? s.email : '', oferta: of ? of.code : '', afiliado: o.aff_code || '', cupom: o.coupon || '',
         utm_source: o.utm_source || '', utm_campaign: o.utm_campaign || '', utm_content: o.utm_content || '',
-        bump: o.bump_title || '', pos_compra: !!o.parent_order_id
+        bump: o.bump_title || '', pos_compra: !!o.parent_order_id,
+        tipo_produto: c && c.kind === 'system' ? 'sistema' : 'curso', suporte_ate: o.support_until ? new Date(o.support_until).toISOString().slice(0, 10) : ''
       });
     }
     var crmQueued = false;
@@ -2832,7 +2841,8 @@ var BrasaLogic = (function () {
         orders: orders.map(function (o) {
           var c = I.byId[o.course_id], gd = c ? (c.guarantee_days || 7) : 7, dias = o.paid_at ? Math.floor((now() - o.paid_at) / DAY) : null;
           return { id: o.id, course: o.course_title || (c && c.title) || '', amount: o.amount, status: o.status, method: o.method, date: dt(o.created_at), paid: dt(o.paid_at),
-            in_guarantee: o.status === 'approved' && dias !== null && dias <= gd, days_since_payment: dias, guarantee_days: gd };
+            in_guarantee: o.status === 'approved' && dias !== null && dias <= gd, days_since_payment: dias, guarantee_days: gd,
+            product_type: c && c.kind === 'system' ? 'sistema' : 'curso', support_until: o.support_until ? dt(o.support_until) : '', support_active: !!(o.status === 'approved' && o.support_until && o.support_until > now()) };
         })
       };
     };

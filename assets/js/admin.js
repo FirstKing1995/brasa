@@ -862,12 +862,12 @@
   }
 
   var COURSE_KEYS = ['slug', 'status', 'order', 'featured', 'title', 'subtitle', 'category', 'tags', 'level', 'short_desc', 'description', 'banner', 'poster', 'logo', 'show_title', 'trailer', 'color', 'instructor_name', 'instructor_bio', 'instructor_photo', 'price', 'anchor_price', 'max_installments', 'methods', 'checkout_url', 'guarantee_days', 'access_days', 'pixel_id', 'promise', 'audience', 'pains', 'benefits', 'bonuses', 'faq', 'testimonials', 'cta_text', 'scarcity_until', 'support_url', 'aff_enabled', 'aff_commission', 'aff_auto', 'aff_cookie_days', 'aff_materials', 'seo_title', 'seo_desc',
-    'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes'];
-  var COURSE_NUM = ['price', 'anchor_price', 'max_installments', 'guarantee_days', 'access_days', 'aff_commission', 'aff_cookie_days', 'order', 'scarcity_until', 'bump_price', 'upsell_price', 'upsell_minutes'];
+    'bump_enabled', 'bump_type', 'bump_course_id', 'bump_title', 'bump_text', 'bump_price', 'bump_image', 'bump_delivery', 'upsell_enabled', 'upsell_course_id', 'upsell_price', 'upsell_title', 'upsell_text', 'upsell_minutes', 'kind', 'bump_support_months'];
+  var COURSE_NUM = ['bump_support_months', 'price', 'anchor_price', 'max_installments', 'guarantee_days', 'access_days', 'aff_commission', 'aff_cookie_days', 'order', 'scarcity_until', 'bump_price', 'upsell_price', 'upsell_minutes'];
   function blankCourse() {
     var b = B.boot0 || {};
     return { slug: '', status: 'draft', order: '', featured: false, title: '', subtitle: '', category: '', tags: '', level: 'Iniciante', short_desc: '', description: '', banner: '', poster: '', logo: '', show_title: true, trailer: '', color: Math.floor(Math.random() * 6), instructor_name: '', instructor_bio: '', instructor_photo: '', price: '', anchor_price: '', max_installments: b.max_installments || 12, methods: ['pix', 'card'], checkout_url: '', guarantee_days: 7, access_days: 0, pixel_id: '', promise: '', audience: '', pains: '', benefits: '', bonuses: '', faq: [], testimonials: [], cta_text: '', scarcity_until: 0, support_url: '', aff_enabled: false, aff_commission: b.aff_default_commission || 40, aff_auto: false, aff_cookie_days: 60, aff_materials: '', seo_title: '', seo_desc: '',
-      bump_enabled: false, bump_type: 'course', bump_course_id: '', bump_title: '', bump_text: '', bump_price: '', bump_image: '', bump_delivery: '', upsell_enabled: false, upsell_course_id: '', upsell_price: '', upsell_title: '', upsell_text: '', upsell_minutes: 15 };
+      bump_enabled: false, bump_type: 'course', bump_course_id: '', bump_title: '', bump_text: '', bump_price: '', bump_image: '', bump_delivery: '', upsell_enabled: false, upsell_course_id: '', upsell_price: '', upsell_title: '', upsell_text: '', upsell_minutes: 15, kind: '', bump_support_months: '' };
   }
   function toDraft(c) {
     var base = blankCourse(), d = {};
@@ -1017,6 +1017,7 @@
             ${fld({ l: 'Situação', t: 'select', f: 'status', v: draft.status, opts: [['draft', 'Rascunho'], ['published', 'Publicado'], ['coming_soon', 'Em breve'], ['archived', 'Arquivado']], hint: H`<span id="st-hint"></span>` })}
             ${fld({ l: 'Nível', f: 'level', v: draft.level, attrs: 'list="dl-level" autocomplete="off"', ph: 'Iniciante' })}
           </div>
+          ${fld({ l: 'Tipo de produto', t: 'select', f: 'kind', v: draft.kind || '', opts: [['', 'Curso'], ['system', 'Sistema (pagamento único, o cliente instala)']], hint: 'Em sistema, as aulas são os guias de instalação e o order bump pode vender suporte com validade.' })}
           ${fld({ l: 'Categoria', f: 'category', v: draft.category, attrs: 'list="dl-cat" autocomplete="off"', ph: 'Ex.: Tráfego pago' })}
           ${fld({ l: 'Tags', f: 'tags', v: draft.tags, ph: 'meta ads, anúncios, captação', hint: 'Separe por vírgula.' })}
           <datalist id="dl-level">${levels.map(function (x) { return H`<option value="${x}"></option>`; })}</datalist>

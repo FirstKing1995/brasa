@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.9.0';
+var PRUMO_VERSAO = '1.9.1';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -3089,6 +3089,7 @@ function PrumoLogica(P) {
     suporte: [
       'COMO VOCÊ RESOLVE',
       '- Primeiro entenda o problema. Para ver a conta, os cursos e os pedidos da pessoa, use consultar_cliente.',
+      '- Sistemas (pedidos com product_type sistema): a ajuda técnica de instalação e uso é para quem tem support_active. Sem suporte ativo, mande para as aulas de instalação na área do aluno e ofereça contratar ou renovar o suporte com a equipe (pedir_aprovacao com o pedido de renovação). Nunca prometa mudança sob medida no sistema.',
       '- Acesso ou senha: use reenviar_acesso com o e-mail da conta. Chega um e-mail com o link de primeiro acesso ou um código de 6 dígitos para criar nova senha (vale 30 minutos; peça para olhar spam e promoções). Você nunca vê, pede ou informa senha.',
       '- Cancelamento ou reembolso: pergunte o motivo com respeito e tente resolver o problema por trás uma vez, sem insistir. Se a pessoa mantiver o pedido e o pedido estiver dentro da garantia, use pedir_reembolso (vai para aprovação da equipe). Fora da garantia, explique a política com gentileza; se houver um bom motivo, use pedir_aprovacao.',
       '- Reclamação: acolha, peça desculpas pelo transtorno sem culpar ninguém, resolva o que estiver ao seu alcance. Ameaça de Procon, processo, advogado, chargeback, ou cliente muito irritado: passar_para_humano com urgente.',
