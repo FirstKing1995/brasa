@@ -8,6 +8,7 @@
 
   var NAV = [
     { sec: 'Atendimento' },
+    { id: 'mesa', rot: 'Minha mesa', ic: 'mesa', perm: 'relatorios', cont: function () { return (S.pedidosAbertos || 0) + (S.aprovacoesPendentes || 0); } },
     { id: 'painel', rot: 'Painel', ic: 'painel' },
     { id: 'conversas', rot: 'Conversas', ic: 'conversas', cont: function () { return S.contatos.filter(function (c) { return C.num(c.nao_lidas) > 0; }).length; } },
     { id: 'contatos', rot: 'Contatos', ic: 'contatos' },
@@ -104,7 +105,7 @@
     S.user = d.usuario; S.perm = d.permissoes || {}; S.config = d.config || {}; S.areas = d.areas || {}; S.suporte = d.suporte || {};
     S.usuarios = d.usuarios || []; S.funis = d.funis || []; S.contatos = d.contatos || []; S.negocios = d.negocios || [];
     S.tarefas = d.tarefas || []; S.modelos = d.modelos || []; S.automacoes = d.automacoes || []; S.campanhas = d.campanhas || []; S.emails = d.emails || [];
-    S.grupos = d.grupos || []; S.agentes = d.agentes || []; S.aprovacoesPendentes = d.aprovacoes_pendentes || 0; S.ultimaSync = d.agora; S.carregado = true;
+    S.grupos = d.grupos || []; S.agentes = d.agentes || []; S.aprovacoesPendentes = d.aprovacoes_pendentes || 0; S.pedidosAbertos = d.pedidos_abertos || 0; S.ultimaSync = d.agora; S.carregado = true;
     C.aplicarMarca(S.config.marca);
   };
   C.recarregar = function () {
@@ -268,7 +269,7 @@
     side.innerHTML = h;
     C.$$('[data-ir]', side).forEach(function (b) { b.onclick = function () { C.ir(b.dataset.ir); }; });
     C.$('#b-eu').onclick = menuUsuario;
-    var unread = NAV[2].cont();
+    var unread = NAV.filter(function (n) { return n.id === 'conversas'; })[0].cont();
     var bn = [['painel', 'Painel', 'painel'], ['conversas', 'Conversas', 'conversas', unread], ['contatos', 'Contatos', 'contatos'], ['negocios', 'Negócios', 'negocios'], ['_mais', 'Mais', 'mais']];
     C.$('#bnav').innerHTML = bn.map(function (b) { return '<button data-bn="' + b[0] + '" class="' + (S.view === b[0] ? 'on' : '') + '">' + ic(b[2]) + b[1] + (b[3] ? '<span class="cont">' + b[3] + '</span>' : '') + '</button>'; }).join('');
     C.$$('[data-bn]').forEach(function (b) { b.onclick = function () { if (b.dataset.bn === '_mais') abrirMenuMob(); else C.ir(b.dataset.bn); }; });
@@ -365,6 +366,7 @@
     C.api('sync', { desde: S.ultimaSync, contato_id: aberto }).then(function (r) {
       S.ultimaSync = r.agora;
       if (r.aprovacoes_pendentes !== undefined && r.aprovacoes_pendentes !== S.aprovacoesPendentes) { S.aprovacoesPendentes = r.aprovacoes_pendentes; renderNav(); }
+      if (r.pedidos_abertos !== undefined && r.pedidos_abertos !== S.pedidosAbertos) { S.pedidosAbertos = r.pedidos_abertos; renderNav(); }
       var mudou = false;
       (r.contatos || []).forEach(function (c) {
         var i = S.contatos.findIndex(function (x) { return x.id === c.id; });

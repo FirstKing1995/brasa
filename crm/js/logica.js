@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.8.0';
+var PRUMO_VERSAO = '1.9.0';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -42,7 +42,8 @@ var PRUMO_ESQUEMA = {
   Notas: ['id', 'contato_id', 'pedido_id', 'curso', 'valor', 'tomador_nome', 'tomador_doc', 'tomador_email', 'motivo', 'status', 'numero', 'link', 'criado_em', 'emitida_em', 'emitida_por'],
   Documentos: ['id', 'time', 'tipo', 'titulo', 'conteudo', 'contato_id', 'status', 'criado_em', 'atualizado_em', 'dados'],
   Missoes: ['id', 'tipo', 'titulo', 'instrucoes', 'dados', 'status', 'origem', 'aprovacao_id', 'resultado', 'erro', 'tentativas', 'custo', 'criado_por', 'criado_em', 'iniciada_em', 'concluida_em'],
-  Posts: ['id', 'tipo', 'titulo', 'legenda', 'hashtags', 'roteiro', 'arte_titulo', 'arte_texto', 'imagem_url', 'curso', 'agendar_em', 'status', 'ig_id', 'permalink', 'erro', 'criado_em', 'atualizado_em', 'publicado_em'],
+  Posts: ['id', 'tipo', 'titulo', 'legenda', 'hashtags', 'roteiro', 'arte_titulo', 'arte_texto', 'imagem_url', 'curso', 'agendar_em', 'status', 'ig_id', 'permalink', 'erro', 'criado_em', 'atualizado_em', 'publicado_em', 'material_url'],
+  Pedidos: ['id', 'tipo', 'titulo', 'briefing', 'formato', 'prazo', 'status', 'arquivos', 'nota', 'origem_tipo', 'origem_id', 'criado_por', 'criado_em', 'entregue_em'],
   Trabalhos: ['id', 'time', 'tipo', 'entrada', 'status', 'documento_id', 'erro', 'tentativas', 'criado_em', 'feito_em'],
   Config: ['chave', 'valor']
 };
@@ -2542,7 +2543,8 @@ function PrumoLogica(P) {
       emails: pode(user, 'disparos') || pode(user, 'automacoes') ? P.tabela('Emails') : [],
       grupos: P.tabela('Grupos'),
       agentes: IA.publicos(),
-      aprovacoes_pendentes: pode(user, 'todos') ? IA.pendentes() : 0
+      aprovacoes_pendentes: pode(user, 'todos') ? IA.pendentes() : 0,
+      pedidos_abertos: pode(user, 'relatorios') ? PD.abertos() : 0
     };
   }
 
@@ -2551,7 +2553,7 @@ function PrumoLogica(P) {
   R['sync'] = function (u, b) {
     var desde = U.str(b.desde);
     var contatos = filtraContatosDoUsuario(u, P.tabela('Contatos')).filter(function (c) { return !desde || c.atualizado_em >= desde; });
-    var r = { agora: P.agora(), contatos: contatos.map(contatoLeve), aprovacoes_pendentes: pode(u, 'todos') ? IA.pendentes() : 0 };
+    var r = { agora: P.agora(), contatos: contatos.map(contatoLeve), aprovacoes_pendentes: pode(u, 'todos') ? IA.pendentes() : 0, pedidos_abertos: pode(u, 'relatorios') ? PD.abertos() : 0 };
     if (b.contato_id) {
       var c = contatoPorId(b.contato_id);
       if (c && podeContato(u, c)) r.mensagens = P.filtrar('Mensagens', 'contato_id', c.id).filter(function (m) { return !desde || m.criado_em >= desde; });
@@ -3799,6 +3801,7 @@ function PrumoLogica(P) {
       aprovacoes_pendentes: P.tabela('Aprovacoes').filter(function (a) { return a.status === 'pendente'; }).map(function (a) { return a.titulo; }),
       esperando_pessoa: P.tabela('Contatos').filter(function (c) { return c.ia_estado === 'humano' && c.ultima_direcao === 'in'; }).map(function (c) { return c.nome + ' (' + (us[c.responsavel_id] || 'sem responsável') + ')'; }).slice(0, 20),
       tarefas_atrasadas: P.tabela('Tarefas').filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em < agora; }).length,
+      pedidos_de_material_abertos: P.tabela('Pedidos').filter(function (x) { return x.status === 'aberto'; }).map(function (x) { return x.titulo + (x.prazo ? ' (até ' + x.prazo + ')' : ''); }),
       negocios_abertos: negs.filter(function (n) { return n.status === 'aberto'; }).length,
       equipe_ia: IA.lista().map(function (a) { return a.nome + ' (' + (IA.NOMES_PAPEIS[a.papel] || 'vendas') + ', ' + (a.ativo === 'SIM' ? 'ativa' : 'pausada') + ')'; }),
       ia_ligada: IA.ativa(), qtd_agentes_ia: Object.keys(ags).length,
@@ -4239,7 +4242,8 @@ function PrumoLogica(P) {
           j.posts.slice(0, 14).forEach(function (p) {
             var hora = /^\d\d:\d\d$/.test(U.str(p.hora)) ? p.hora : '19:00';
             var dia = U.somaTempo(e.de + 'T12:00:00', Math.min(6, Math.max(0, U.num(p.dia))) * 1440).slice(0, 10);
-            MKT.criarPost({ tipo: p.tipo, titulo: p.titulo, legenda: p.legenda, hashtags: p.hashtags, roteiro: p.roteiro, arte_titulo: p.arte_titulo, arte_texto: p.arte_texto, curso: p.curso, agendar_em: dia + 'T' + hora + ':00' });
+            var np = MKT.criarPost({ tipo: p.tipo, titulo: p.titulo, legenda: p.legenda, hashtags: p.hashtags, roteiro: p.roteiro, arte_titulo: p.arte_titulo, arte_texto: p.arte_texto, curso: p.curso, agendar_em: dia + 'T' + hora + ':00' });
+            if (np.tipo === 'reels') PD.criar({ tipo: 'video', titulo: 'Vídeo para o reels: ' + np.titulo, briefing: 'Roteiro:\n' + (np.roteiro || 'livre') + '\n\nLegenda que vai junto:\n' + np.legenda, formato: 'Vertical 9:16, de 15 a 45 segundos, boa luz, fale olhando para a câmera. Sem música (entra na edição).', prazo: U.somaTempo(np.agendar_em, -1440).slice(0, 10), origem_tipo: 'post', origem_id: np.id, criado_por: 'Marketing (IA)' });
           });
         } };
     }
@@ -4397,6 +4401,7 @@ function PrumoLogica(P) {
     j.brasa = r;
     P.atualizar('Documentos', d.id, { dados: JSON.stringify(j), status: 'revisado', atualizado_em: P.agora() });
     hist('', '', u, 'produto', 'Rascunho de curso criado na BRASA: ' + r.title);
+    PD.criar({ tipo: 'gravacao', titulo: 'Gravar as aulas de ' + r.title, briefing: (j.seasons || []).map(function (sd, i) { return 'Temporada ' + (i + 1) + ': ' + sd.title + '\n' + (sd.lessons || []).map(function (l, k) { return '  ' + (k + 1) + '. ' + l.title + (l.description ? ' (' + l.description + ')' : ''); }).join('\n'); }).join('\n\n') + '\n\nDepois de gravar, suba os vídeos no YouTube como não listados e cole os links aqui (ou um link da pasta do Drive).', formato: 'Horizontal 16:9, 1080p, áudio limpo (microfone de lapela se tiver), aulas de 5 a 15 minutos.', origem_tipo: 'curso', origem_id: r.id, criado_por: 'Produto (IA)' });
     return r;
   };
 
@@ -4652,6 +4657,90 @@ function PrumoLogica(P) {
     return { chave: k, url: P.urlApp() };
   };
   R['ti.saude'] = function (u) { exige(u, 'relatorios'); return QT.saude(); };
+
+  /* ================================== Pedidos de material para o humano
+     Os times (Marketing, Produto e quem mais precisar) pedem ao dono o que só ele faz: vídeo, foto, gravação,
+     depoimento. Ele entrega pela tela Minha mesa (arquivo ou link) e o material volta para quem pediu. */
+  var PD = {};
+  PD.TIPOS = { video: 'Vídeo', foto: 'Foto', gravacao: 'Gravação de aulas', audio: 'Áudio', depoimento: 'Depoimento', texto: 'Texto', outro: 'Outro' };
+  PD.abertos = function () { return P.tabela('Pedidos').filter(function (x) { return x.status === 'aberto'; }).length; };
+  PD.criar = function (o) {
+    if (o.origem_tipo && o.origem_id && P.tabela('Pedidos').some(function (x) { return x.origem_tipo === o.origem_tipo && x.origem_id === o.origem_id && x.status !== 'cancelado'; })) return null;
+    var p = { id: P.id('PD'), tipo: PD.TIPOS[o.tipo] ? o.tipo : 'outro', titulo: U.cap(o.titulo, 150), briefing: U.cap(o.briefing, 6000), formato: U.cap(o.formato, 400), prazo: U.str(o.prazo).slice(0, 10),
+      status: 'aberto', arquivos: '[]', nota: '', origem_tipo: U.cap(o.origem_tipo, 30), origem_id: U.cap(o.origem_id, 60), criado_por: U.cap(o.criado_por || 'Equipe', 80), criado_em: P.agora(), entregue_em: '' };
+    P.inserir('Pedidos', p);
+    hist('', '', null, 'pedido', 'Pedido de material para o dono: ' + p.titulo);
+    // aviso no WhatsApp do dono (o mesmo do resumo diário), se a API estiver ligada
+    var k = cfg();
+    if (k.ASSIST_WHATS && WA.temApi()) { try { WA.enviar(U.telWa(k.ASSIST_WHATS), 'Pedido novo da equipe (' + PD.TIPOS[p.tipo] + '): ' + p.titulo + (p.prazo ? '. Prazo: ' + p.prazo.split('-').reverse().join('/') : '') + '. Detalhes em Minha mesa, no CRM.'); } catch (e) { /* o pedido fica na mesa do mesmo jeito */ } }
+    return p;
+  };
+  PD.entregar = function (p, links, nota, user) {
+    var arqs = U.json(p.arquivos, []) || [];
+    (links || []).forEach(function (l) { var url = U.str(l.url || l).trim(); if (/^(https:\/\/|blob:)/.test(url)) arqs.push({ nome: U.cap(l.nome || 'link', 120), url: U.cap(url, 600) }); });
+    if (!arqs.length) throw new Error('Envie um arquivo ou cole um link (https://).');
+    var mud = { status: 'enviado', arquivos: JSON.stringify(arqs.slice(0, 30)), nota: U.cap(nota, 1000), entregue_em: P.agora() };
+    P.atualizar('Pedidos', p.id, mud);
+    if (p.origem_tipo === 'post') {
+      var post = P.tabela('Posts').filter(function (x) { return x.id === p.origem_id; })[0];
+      if (post) P.atualizar('Posts', post.id, { material_url: arqs[0].url, atualizado_em: P.agora() });
+    }
+    hist('', '', user, 'pedido', 'Material entregue: ' + p.titulo + ' (' + arqs.length + ' arquivo' + (arqs.length > 1 ? 's' : '') + ')');
+    return Object.assign(p, mud);
+  };
+  /** Tudo o que depende do dono num lugar só. */
+  PD.mesa = function (u) {
+    var agora = P.agora(), us = {};
+    P.tabela('Usuarios').forEach(function (x) { us[x.id] = x.nome; });
+    var pedidos = P.tabela('Pedidos').filter(function (x) { return x.status === 'aberto'; }).sort(function (a, b) { return (a.prazo || '9999') < (b.prazo || '9999') ? -1 : 1; });
+    return {
+      pedidos: pedidos.map(function (x) { var o = Object.assign({}, x); o.atrasado = !!(x.prazo && x.prazo < agora.slice(0, 10)); return o; }),
+      entregues: P.tabela('Pedidos').filter(function (x) { return x.status === 'enviado'; }).sort(function (a, b) { return a.entregue_em < b.entregue_em ? 1 : -1; }).slice(0, 10),
+      aprovacoes: P.tabela('Aprovacoes').filter(function (a) { return a.status === 'pendente'; }).map(function (a) { return { id: a.id, tipo: a.tipo, titulo: a.titulo, criado_em: a.criado_em }; }),
+      missoes: P.tabela('Missoes').filter(function (m) { return m.status === 'erro' || m.status === 'aguardando'; }).map(function (m) { return { id: m.id, titulo: m.titulo, status: m.status, erro: m.erro }; }),
+      executor_online: MI.online(), executor_configurado: !!cfg().MISSOES_CHAVE,
+      tarefas: P.tabela('Tarefas').filter(function (t) { return t.feita !== 'SIM' && t.vence_em && t.vence_em <= agora && (!t.responsavel_id || t.responsavel_id === u.id); }).map(function (t) { return { id: t.id, titulo: t.titulo, vence_em: t.vence_em, contato_id: t.contato_id }; }).slice(0, 30),
+      esperando: P.tabela('Contatos').filter(function (c) { return c.ia_estado === 'humano' && c.ultima_direcao === 'in' && (!c.responsavel_id || c.responsavel_id === u.id || pode(u, 'todos')); }).map(function (c) { return { id: c.id, nome: c.nome, ultima_msg: c.ultima_msg, ultima_msg_em: c.ultima_msg_em, responsavel: us[c.responsavel_id] || '' }; }).slice(0, 30),
+      notas: pode(u, 'financeiro') ? P.tabela('Notas').filter(function (n) { return n.status === 'pendente' || n.status === 'cancelar'; }).length : 0,
+      posts_celular: P.tabela('Posts').filter(function (p) { return p.status === 'manual'; }).map(function (p) { return { id: p.id, titulo: p.titulo, tipo: p.tipo, agendar_em: p.agendar_em, material_url: p.material_url || '' }; }).slice(0, 20),
+      ia_erro: cfg().IA_ERRO || ''
+    };
+  };
+  R['mesa.resumo'] = function (u) { exige(u, 'relatorios'); return PD.mesa(u); };
+  R['pedido.listar'] = function (u, b) {
+    exige(u, 'relatorios');
+    return P.tabela('Pedidos').filter(function (x) { return !b.status || b.status === 'todos' || x.status === b.status; }).sort(function (a, c) { return a.criado_em < c.criado_em ? 1 : -1; }).slice(0, 150);
+  };
+  R['pedido.criar'] = function (u, b) {
+    exige(u, 'relatorios');
+    if (!U.str(b.titulo).trim()) throw new Error('Dê um título ao pedido.');
+    return PD.criar({ tipo: b.tipo, titulo: b.titulo, briefing: b.briefing, formato: b.formato, prazo: b.prazo, criado_por: u.nome });
+  };
+  R['pedido.arquivo'] = function (u, b) {
+    exige(u, 'relatorios');
+    var p = P.tabela('Pedidos').filter(function (x) { return x.id === b.id; })[0];
+    if (!p) throw new Error('Pedido não encontrado.');
+    var b64 = U.str(b.base64).replace(/^data:[^,]*,/, '');
+    if (!b64) throw new Error('Arquivo vazio.');
+    if (b64.length > 28000000) throw new Error('Arquivo grande demais para enviar por aqui (limite de 20 MB). Suba no Google Drive ou no YouTube e cole o link.');
+    if (!P.midia || !P.midia.arquivo) throw new Error('Envio de arquivos indisponível aqui.');
+    var nome = U.cap(U.str(b.nome || 'material').replace(/[^\w.\- ]+/g, '').trim() || 'material', 100);
+    var url = P.midia.arquivo(b64, P.agora().slice(0, 10) + ' - ' + nome, U.str(b.mime) || 'application/octet-stream');
+    return { url: url, nome: nome };
+  };
+  R['pedido.entregar'] = function (u, b) {
+    exige(u, 'relatorios');
+    var p = P.tabela('Pedidos').filter(function (x) { return x.id === b.id; })[0];
+    if (!p) throw new Error('Pedido não encontrado.');
+    if (p.status === 'cancelado') throw new Error('Este pedido foi cancelado.');
+    return PD.entregar(p, b.links, b.nota, u);
+  };
+  R['pedido.situacao'] = function (u, b) {
+    exige(u, 'relatorios');
+    if (['aberto', 'cancelado', 'usado'].indexOf(b.status) < 0) throw new Error('Situação inválida.');
+    P.atualizar('Pedidos', b.id, { status: b.status });
+    return true;
+  };
 
   R['escritorio.painel'] = function (u, b) {
     var aba = b.aba || 'diretoria';
@@ -5234,7 +5323,7 @@ function PrumoLogica(P) {
   return {
     U: U, WA: WA, IG: IG, INT: INT, EM: EM, FIN: FIN, CHAT: CHAT, SUP: SUP, cfg: cfg, arquivar: arquivar, receberRastreio: receberRastreio, salvarCfg: salvarCfg, rotear: rotear, receberWebhook: receberWebhook, trabalhar: trabalhar,
     semear: semear, receber: receber, montarTexto: montarTexto, filtrarContatos: filtrarContatos, versao: PRUMO_VERSAO,
-    IA: IA, SUC: SUC, NF: NF, FIN2: FIN2, TR: TR, MKT: MKT, MI: MI, QT: QT,
+    IA: IA, SUC: SUC, NF: NF, FIN2: FIN2, TR: TR, MKT: MKT, MI: MI, QT: QT, PD: PD,
     trabalharIA: function (trava, max) {
       trava = trava || function (f) { return f(); };
       var inicio = Date.now();

@@ -173,7 +173,7 @@
         '<div class="campo"><label>Frase de apoio da arte</label><input class="inp" id="ed-ax" maxlength="240" value="' + esc(p.arte_texto || '') + '"></div>' +
         '<div class="campo"><label>Legenda</label><textarea class="inp" id="ed-leg" rows="6" maxlength="2200">' + esc(p.legenda || '') + '</textarea></div>' +
         '<div class="campo"><label>Hashtags</label><input class="inp" id="ed-hash" value="' + esc(p.hashtags || '') + '"></div>' +
-        '<div class="campo"><label>Roteiro (carrossel, reels e stories)</label><textarea class="inp" id="ed-rot" rows="4">' + esc(p.roteiro || '') + '</textarea></div></div></div>',
+        '<div class="campo"><label>Roteiro (carrossel, reels e stories)</label><textarea class="inp" id="ed-rot" rows="4">' + esc(p.roteiro || '') + '</textarea></div>' + (p.material_url ? '<p class="small" style="margin:0 0 10px">' + ic('camera') + ' Material que você gravou: <a href="' + esc(p.material_url) + '" target="_blank" rel="noopener">abrir</a></p>' : '') + '</div></div>',
       pe: '<button class="btn" data-fechar>Cancelar</button><button class="btn pri" id="ed-ok">' + ic('check') + ' Salvar</button>',
       aoAbrir: function (el) {
         var ler = function () { return { id: p.id, tipo: el.querySelector('#ed-tipo').value, agendar_em: el.querySelector('#ed-quando').value ? el.querySelector('#ed-quando').value + ':00' : '', curso: el.querySelector('#ed-curso').value, titulo: el.querySelector('#ed-tit').value,

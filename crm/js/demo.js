@@ -6,7 +6,7 @@
    ========================================================================== */
 (function () {
   'use strict';
-  var CHAVE = 'brasa_crm_demo_v1';
+  var CHAVE = 'brasa_crm_demo_v2';
   // ponte com a demo da BRASA (mesmo site): eventos chegam por PONTE_CRM; condições especiais vão por PONTE_OFERTAS
   var PONTE_CRM = 'brasa_crm_ponte', PONTE_OFERTAS = 'brasa_ponte_ofertas', PONTE_CHAVE = 'demo-ponte-brasa-crm-2026-0000000000000000', BRASA_DB = 'brasa:demo:db:v9';
   var CURSOS_RESERVA = [['trafego-sem-romance', 'Tráfego Sem Romance', 597], ['funil-perpetuo', 'Funil Perpétuo', 697], ['apps-sem-mensalidade', 'Apps Sem Mensalidade', 597], ['design-que-vende', 'Design Que Vende', 197], ['respira', 'Respira', 97]];
@@ -237,7 +237,7 @@
     },
     urlApp: function () { return 'https://script.google.com/macros/s/SEU-ID-DEMO/exec'; },
     demo: true,
-    midia: { salvar: function (b64) { var bin = atob(b64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr], { type: 'image/jpeg' })); } },
+    midia: { salvar: function (b64) { var bin = atob(b64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr], { type: 'image/jpeg' })); }, arquivo: function (b64, nome, mime) { var bin = atob(b64), arr = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr], { type: mime || 'application/octet-stream' })); } },
     // e-mail simulado: nada sai de verdade; parte das pessoas "abre" e "clica" sozinha
     email: {
       gmail: function (m) { simularLeitura(m.html); },
@@ -426,6 +426,10 @@
     P.salvarConfig({ SUPORTE_CODIGO: L.SUP.b64(jsup, true) + '.' + L.SUP.soma(jsup) });
     // deixa as automações de exemplo ligadas na demonstração
     t('Automacoes').forEach(function (a, i) { if (i < 2) a.ativo = 'SIM'; });
+    // pedidos de material das equipes para o dono
+    L.PD.criar({ tipo: 'video', titulo: 'Vídeo para o reels: 3 erros no primeiro anúncio', briefing: 'Roteiro:\nCena 1 (0-3s): olhando para a câmera, "Você está queimando dinheiro no impulsionar."\nCena 2: mostre o celular com o botão impulsionar.\nCena 3: os 3 erros, um por frase, com o dedo contando.\nCena 4: "Link na bio para a aula grátis."\n\nLegenda que vai junto:\nTrês erros que fazem o primeiro anúncio falhar. Salve para não cair neles.', formato: 'Vertical 9:16, de 15 a 45 segundos, boa luz, fale olhando para a câmera. Sem música (entra na edição).', prazo: dia(1).slice(0, 10), origem_tipo: 'post', origem_id: 'demo-reels-1', criado_por: 'Marketing (IA)' });
+    L.PD.criar({ tipo: 'gravacao', titulo: 'Gravar as aulas de Copy Avançada', briefing: 'Temporada 1: Fundamentos\n  1. A grande ideia (como achar a sua)\n  2. Promessa que vende\n  3. Prova e garantia\n\nDepois de gravar, suba os vídeos no YouTube como não listados e cole os links aqui (ou um link da pasta do Drive).', formato: 'Horizontal 16:9, 1080p, áudio limpo (microfone de lapela se tiver), aulas de 5 a 15 minutos.', prazo: dia(10).slice(0, 10), origem_tipo: 'curso', origem_id: 'demo-curso-1', criado_por: 'Produto (IA)' });
+    L.PD.criar({ tipo: 'foto', titulo: 'Fotos do seu espaço de trabalho', briefing: 'Três fotos com luz natural: você no computador, a mesa de cima e um retrato sorrindo. Vão para o perfil e para os anúncios de prova social.', formato: 'Vertical 4:5, sem filtro.', prazo: dia(-1).slice(0, 10), criado_por: 'Marketing (IA)' });
     salvar();
   }
 
