@@ -148,6 +148,19 @@
       try { localStorage.setItem(PONTE_CRM, JSON.stringify(q)); } catch (e) {}
       return { code: 200, text: '{"ok":true}' };
     },
+    metaGet: function (ver, path, params) {
+      if (/^https:/.test(path)) return { data: [] };
+      var tr = JSON.parse(params.time_range), out = [], d = new Date(tr.since + 'T12:00:00'), fim = new Date(tr.until + 'T12:00:00'), i = 0;
+      var ads = [['c1', 'perpetuo-frio', 'a1', 'Interesses marketing', 'ad1', 'Video dor 01', 38], ['c1', 'perpetuo-frio', 'a1', 'Interesses marketing', 'ad2', 'Carrossel prova', 22], ['c2', 'remarketing-7d', 'a2', 'Visitou a página 7d', 'ad3', 'Depoimento Iara', 14]];
+      for (; d <= fim; d = new Date(d.getTime() + 864e5), i++) {
+        ads.forEach(function (a, j) {
+          var f = 0.75 + ((i * 7 + j * 13) % 10) / 20, spend = Math.round(a[6] * f * 100) / 100, imp = Math.round(spend * (j === 2 ? 55 : 95)), lc = Math.round(imp * (j === 2 ? 0.024 : 0.013));
+          out.push({ date_start: d.toISOString().slice(0, 10), campaign_id: a[0], campaign_name: a[1], adset_id: a[2], adset_name: a[3], ad_id: a[4], ad_name: a[5], spend: String(spend), impressions: String(imp), reach: String(Math.round(imp * 0.7)), clicks: String(Math.round(lc * 1.6)), inline_link_clicks: String(lc),
+            actions: [{ action_type: 'landing_page_view', value: String(Math.round(lc * 0.8)) }, { action_type: 'initiate_checkout', value: String(Math.round(lc * 0.09)) }, { action_type: 'purchase', value: String((i + j) % 4 === 0 ? 1 : 0) }], action_values: [{ action_type: 'purchase', value: String((i + j) % 4 === 0 ? 497 : 0) }] });
+        });
+      }
+      return { data: out };
+    },
     capi: function (pixel, token, ver, payload) { env.log('info', 'capi', 'Purchase enviado ao Pixel ' + pixel + ' (simulado)', {}); },
     github: function (path) { return env.siteUrl() + 'lp.html?c=' + encodeURIComponent(path.split('/')[1] || ''); },
     upload: function (name, mime, data) { return 'data:' + mime + ';base64,' + data; },

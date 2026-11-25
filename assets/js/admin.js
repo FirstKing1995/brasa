@@ -247,7 +247,7 @@
      casca: menu lateral, topo do celular e gaveta
      --------------------------------------------------------------- */
   var NAV = [
-    ['/', 'Painel', 'chart', ''], ['/cursos', 'Cursos', 'cap', ''], ['/vendas', 'Vendas', 'wallet', ''],
+    ['/', 'Painel', 'chart', ''], ['/cursos', 'Cursos', 'cap', ''], ['/vendas', 'Vendas', 'wallet', ''], ['/anuncios', 'Anúncios', 'rocket', ''],
     ['/alunos', 'Alunos', 'users', ''], ['/afiliados', 'Afiliados', 'link', 'aff'], ['/vendedores', 'Vendedores', 'target', ''],
     ['/cupons', 'Cupons', 'tag', ''], ['/banners', 'Banners', 'image', ''], ['/mensagens', 'Mensagens', 'mail', ''],
     ['/suporte', 'Suporte', 'chat', 'msg'], ['/config', 'Configurações', 'settings', 'crm']
@@ -404,6 +404,7 @@
       .on('/curso/novo', R(pageCourse))
       .on('/curso/:id', R(pageCourse))
       .on('/vendas', R(pageSales))
+      .on('/anuncios', R(pageAds))
       .on('/alunos', R(pageStudents))
       .on('/afiliados', R(pageAffiliates))
       .on('/cupons', R(pageCoupons))
@@ -571,6 +572,122 @@
     }
 
     S.acts['open-order'] = function (el) { go('/vendas?q=' + encodeURIComponent(el.dataset.id) + '&periodo=tudo&abrir=1'); };
+    load();
+  }
+
+  /* =====================================================================
+     ANÚNCIOS: números da Meta cruzados com as vendas reais (UTM)
+     ===================================================================== */
+  function pageAds(ctx) {
+    setTitle('Anúncios');
+    var days = Number(B.store.get('adm:ads-days', 30));
+    if ([7, 30, 90].indexOf(days) < 0) days = 30;
+    var reqId = 0, root = pageEl(), body, last = null;
+    root.innerHTML = String(H`
+      ${pgHead('Anúncios', 'Quanto os anúncios custaram e quanto voltou em vendas de verdade.', H`
+        <div class="seg" role="group" aria-label="Período">${[7, 30, 90].map(function (d) { return H`<button type="button" data-act="period" data-d="${d}" class="${d === days ? 'is-active' : ''}" aria-pressed="${String(d === days)}">${d} dias</button>`; })}</div>
+        <button class="btn btn--ghost btn--sm" type="button" data-act="import">${ic('upload')}Importar CSV</button>
+        <button class="btn btn--primary btn--sm" type="button" data-act="sync">${ic('refresh')}Atualizar da Meta</button>`)}
+      <div id="ads-body"></div>`);
+    body = $('#ads-body');
+    var pct = function (v) { return v == null ? '—' : B.fmt.pct(v); };
+    var x2 = function (v) { return v == null ? '—' : B.fmt.num(v) + 'x'; };
+    var mon = function (v) { return v == null ? '—' : money(v); };
+
+    S.acts = {
+      period: function (el) {
+        days = Number(el.dataset.d); B.store.set('adm:ads-days', days);
+        $$('[data-act="period"]', root).forEach(function (b) { var on = Number(b.dataset.d) === days; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', String(on)); });
+        load();
+      },
+      reload: function () { load(); },
+      sync: function (el) {
+        el.disabled = true;
+        B.api('adminAdsSync', { days: Math.max(days, 30) }).then(function (r) { B.toast('Números da Meta atualizados (' + int(r.rows || 0) + ' linhas).', 'ok'); load(); })
+          .catch(function (e) { B.toast(e.message, 'bad', 8000); }).then(function () { el.disabled = false; });
+      },
+      'copy-utm': function (el) { if (last) B.copy(last.setup.utm, el); },
+      import: function () {
+        var box = document.createElement('div');
+        box.innerHTML = String(H`<p class="t-sm" style="margin:0 0 10px">No Gerenciador de Anúncios, escolha o período, em <b>Detalhamento</b> marque <b>Por tempo > Dia</b> e exporte o relatório em CSV (no nível de anúncio, com as colunas Valor usado, Impressões, Cliques no link e Compras). Depois escolha o arquivo aqui. Importar de novo atualiza os mesmos dias, sem duplicar.</p>
+          <input class="input" type="file" accept=".csv,text/csv" id="ads-csv">`);
+        B.modal({
+          title: 'Importar relatório do Gerenciador de Anúncios', body: box,
+          actions: [{ label: 'Cancelar' }, { label: 'Importar', kind: 'primary', icon: 'upload', onClick: function () {
+            var f = $('#ads-csv', box).files[0];
+            if (!f) { B.toast('Escolha o arquivo CSV.', 'bad'); return false; }
+            return f.text().then(function (txt) { return B.api('adminAdsImport', { csv: txt }); }).then(function (r) { B.toast(int(r.imported) + ' linhas importadas.', 'ok'); load(); });
+          } }]
+        });
+      }
+    };
+
+    function load() {
+      var my = ++reqId, r = dashRange(days);
+      body.innerHTML = String(dashSkeleton());
+      B.api('adminAds', r).then(function (d) { if (!ctx.live() || my !== reqId) return; last = d; render(d); })
+        .catch(function (e) { if (ctx.live() && my === reqId) body.innerHTML = String(errorState(e, 'reload')); });
+    }
+    function kpi(label, value, sub, cls) {
+      return H`<div class="kpi ${cls || ''}"><div class="kpi__label">${label}</div><div class="kpi__value t-num">${value}</div><div class="kpi__sub"><span>${sub}</span></div></div>`;
+    }
+    function tabela(list, nome) {
+      if (!list.length) return emptyState('Nada no período', 'Quando houver investimento ou vendas de anúncios, aparece aqui.', '', 'rocket');
+      return H`<div class="table-wrap table-wrap--bare"><table class="table table--dense">
+        <thead><tr><th>${nome}</th><th class="num">Investido</th><th class="num">Cliques</th><th class="num">CTR</th><th class="num">CPC</th><th class="num">Vendas</th><th class="num">Faturamento</th><th class="num">CPA</th><th class="num">ROAS</th><th class="num">ROI</th></tr></thead>
+        <tbody>${list.map(function (c) {
+          var tone = c.roi == null ? '' : c.roi >= 0 ? 'color:var(--ok, #3fa66b)' : 'color:var(--bad, #d9534f)';
+          return H`<tr><td><div class="ellipsis" style="max-width:260px" title="${c.name}">${c.name}</div>${c.campaign ? H`<div class="t-xs t-faint ellipsis" style="max-width:260px">${c.campaign}</div>` : ''}</td><td class="num">${money(c.spend)}</td><td class="num">${int(c.link_clicks)}</td><td class="num">${pct(c.ctr)}</td><td class="num">${mon(c.cpc)}</td><td class="num">${int(c.sales)}</td><td class="num">${money(c.revenue)}</td><td class="num">${mon(c.cpa)}</td><td class="num">${x2(c.roas)}</td><td class="num" style="${tone}">${pct(c.roi)}</td></tr>`;
+        })}</tbody></table></div>`;
+    }
+    function render(d) {
+      var k = d.kpis, st = d.setup, semDados = !st.rows;
+      var avisos = [];
+      if (!st.token || !st.account) avisos.push(H`<div class="alist-ok" style="background:var(--warn-bg, rgba(226,167,46,.12))">${ic('info')}<span>Para os números chegarem sozinhos da Meta, cole o <b>ID da conta de anúncios</b> e o <b>token de leitura</b> em <a href="#/config?s=pixel">Configurações > Pixel</a>. Sem token, use <b>Importar CSV</b>.</span></div>`);
+      if (st.last_error) avisos.push(H`<div class="alist-ok" style="background:rgba(217,83,79,.12)">${ic('alert')}<span>A última atualização falhou: ${st.last_error}</span></div>`);
+      if (st.sales_without_utm) avisos.push(H`<div class="alist-ok">${ic('info')}<span>${plural(st.sales_without_utm, 'venda de anúncio chegou', 'vendas de anúncio chegaram')} sem o nome da campanha. Coloque os parâmetros de URL abaixo em todos os anúncios.</span></div>`);
+      body.innerHTML = String(H`
+        ${avisos.length ? H`<div class="stack" style="--gap:8px;margin-bottom:14px">${avisos}</div>` : ''}
+        <section class="kband" aria-label="Resumo dos anúncios">
+          ${kpi('Investimento', moneyK(k.spend), int(k.impressions) + ' impressões', 'kpi--hero')}
+          ${kpi('Faturamento dos anúncios', moneyK(k.revenue), plural(k.sales, 'venda real', 'vendas reais') + ' · líquido ' + moneyK(k.net))}
+          ${kpi('ROAS', x2(k.roas), 'faturamento ÷ investimento')}
+          ${kpi('ROI', pct(k.roi), 'lucro ' + money(k.profit) + ' (líquido − reembolsos − anúncios)', k.roi != null && k.roi < 0 ? 'kpi--warn' : '')}
+          ${kpi('Custo por venda (CPA)', mon(k.cpa), 'ticket médio ' + mon(k.ticket))}
+          ${kpi('Cliques no link', int(k.link_clicks), 'CTR ' + pct(k.ctr) + ' · CPC ' + mon(k.cpc))}
+          ${kpi('CPM', mon(k.cpm), 'custo por mil impressões')}
+          ${kpi('Conversão do clique', pct(k.conv), 'cliques que viraram venda')}
+        </section>
+        <div class="dash-grid">
+          <div class="dash-col">
+            <section class="panel dash-chart">${panelHead('Investimento por dia', '', 'Valor usado nos anúncios da Meta')}<div id="ads-spend"></div></section>
+            <section class="panel dash-chart">${panelHead('Faturamento dos anúncios por dia', '', 'Vendas aprovadas na BRASA vindas de anúncios')}<div id="ads-rev"></div></section>
+          </div>
+          <div class="dash-col">
+            <section class="panel">${panelHead('Funil', '', 'Do anúncio até a venda')}
+              <ul class="slist">${[['Impressões', k.impressions], ['Cliques no link', k.link_clicks], ['Visitas à página (Meta)', k.meta_lp_views], ['Visitas à página (BRASA)', k.lp_views], ['Checkouts iniciados (Meta)', k.meta_checkouts], ['Vendas pela Meta', k.meta_purchases], ['Vendas reais na BRASA', k.sales]].map(function (f) {
+                return H`<li class="slist__item" style="cursor:default"><span class="min0 grow">${f[0]}</span><b class="t-num">${int(f[1])}</b></li>`;
+              })}</ul>
+              <p class="t-xs t-faint" style="margin:8px 0 0">A Meta atribui vendas pelo pixel (inclui quem viu e comprou depois). A BRASA conta só vendas aprovadas com UTM de anúncio. Compare os dois. ROAS da Meta: ${x2(k.meta_roas)}.</p>
+            </section>
+            <section class="panel">${panelHead('De onde vieram as vendas')}
+              ${(d.sources || []).length ? H`<ol class="toplist">${d.sources.map(function (s, i) { return H`<li><span class="toplist__pos t-num">${i + 1}</span><div class="min0 grow"><b>${s.name}</b><div class="t-xs t-faint">${plural(s.sales, 'venda', 'vendas')}</div></div><div class="t-num toplist__val">${moneyK(s.revenue)}</div></li>`; })}</ol>` : emptyState('Sem vendas no período', '', '', 'cart')}
+            </section>
+            <section class="panel">${panelHead('Parâmetros de URL para os anúncios')}
+              <p class="t-sm" style="margin:0 0 8px">Cole em <b>Parâmetros de URL</b> de cada anúncio na Meta. É assim que a BRASA sabe de qual campanha e anúncio veio cada venda.</p>
+              <code class="t-xs" style="display:block;word-break:break-all;padding:8px;border-radius:8px;background:rgba(255,255,255,.05)">${st.utm}</code>
+              <div style="margin-top:8px"><button class="btn btn--ghost btn--sm" type="button" data-act="copy-utm">${ic('copy')}Copiar</button></div>
+              <p class="t-xs t-faint" style="margin:8px 0 0">${st.last_sync ? 'Última atualização da Meta: ' + B.fmt.datetime(st.last_sync) + '. Atualiza sozinho a cada 6 horas.' : 'Ainda não houve atualização da Meta.'}</p>
+            </section>
+          </div>
+        </div>
+        <section class="panel panel--flush" style="margin-top:14px">${panelHead('Campanhas')}${tabela(d.campaigns || [], 'Campanha')}</section>
+        <section class="panel panel--flush" style="margin-top:14px">${panelHead('Anúncios')}${tabela(d.ads || [], 'Anúncio')}</section>
+        ${semDados && !k.sales ? H`<div style="margin-top:14px">${emptyState('Nenhum número de anúncio ainda', 'Ligue o token da Meta em Configurações ou importe o CSV do Gerenciador de Anúncios.', '', 'rocket')}</div>` : ''}`);
+      var fromKey = B.dateInput(d.from), series = (d.series || []).filter(function (s) { return s.d >= fromKey; });
+      B.chart.area($('#ads-spend', body), series.map(function (s) { return { label: s.label, value: s.spend }; }), { format: B.fmt.money, height: 200, label: 'Investimento por dia' });
+      B.chart.area($('#ads-rev', body), series.map(function (s) { return { label: s.label, value: s.revenue }; }), { format: B.fmt.money, height: 200, label: 'Faturamento dos anúncios por dia' });
+    }
     load();
   }
 
@@ -2892,7 +3009,9 @@
           ${panel('pixel', 'Pixel e API de Conversões', 'Meta Ads.', H`
             ${cf('pixel_id', { l: 'Pixel padrão da Meta', ph: '1234567890123456', attrs: 'inputmode="numeric" autocomplete="off"', hint: 'Usado em todos os cursos sem pixel próprio. Só números.' })}
             ${secretField('META_CAPI_TOKEN', 'Token da API de Conversões', 'Gerenciador de Eventos > sua origem de dados > Configurações > API de Conversões. Sem ele, só o Pixel do navegador dispara.')}
-            ${cf('meta_api_version', { l: 'Versão da Graph API', ph: 'v24.0', attrs: 'autocomplete="off"', hint: 'Troque só se a Meta descontinuar a versão atual.' })}`)}
+            ${cf('meta_api_version', { l: 'Versão da Graph API', ph: 'v24.0', attrs: 'autocomplete="off"', hint: 'Troque só se a Meta descontinuar a versão atual.' })}
+            ${cf('meta_ad_account', { l: 'ID da conta de anúncios', ph: '1697542581992916', attrs: 'inputmode="numeric" autocomplete="off"', hint: 'Gerenciador de Anúncios, ao lado do nome da conta. Usado na página Anúncios.' })}
+            ${secretField('META_ADS_TOKEN', 'Token de leitura dos anúncios', 'Configurações da empresa > Usuários do sistema > Adicionar (função Funcionário) > Atribuir ativos: a conta de anúncios > Gerar token com a permissão ads_read. Só lê os números, não mexe nos anúncios.')}`)}
           ${panel('ia', 'Inteligência artificial', 'Escreve as páginas de vendas.', H`
             ${secretField('AI_API_KEY', 'Chave da Anthropic', 'Gerada em console.anthropic.com. Sem ela, a página usa o modelo automático.')}
             ${cf('ai_model', { l: 'Modelo', t: 'select', opts: aiOpts, hint: 'Sonnet 5.5 escreve bem e custa pouco; Opus 5.5 é o mais caprichado, e Haiku 5.5 o mais barato.' })}

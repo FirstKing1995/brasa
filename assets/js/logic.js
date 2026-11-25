@@ -37,6 +37,7 @@ var BrasaLogic = (function () {
     Payouts: ['id', 'created_at', 'aff_id', 'amount', 'count', 'pix_key', 'note'],
     Coupons: ['id', 'created_at', 'code', 'course_id', 'type', 'value', 'max_uses', 'uses', 'expires_at', 'active', 'aff_code'],
     Messages: ['id', 'ts', 'thread', 'from', 'text', 'read_admin', 'read_user'],
+    AdStats: ['id', 'created_at', 'updated_at', 'date', 'campaign_id', 'campaign', 'adset_id', 'adset', 'ad_id', 'ad', 'spend', 'impressions', 'reach', 'clicks', 'link_clicks', 'lp_views', 'checkouts', 'purchases', 'purchase_value', 'source'],
     Certificates: ['id', 'code', 'created_at', 'user_id', 'course_id', 'name', 'course_title', 'hours'],
     Logs: ['id', 'ts', 'level', 'where', 'msg', 'data'],
     Templates: ['id', 'created_at', 'updated_at', 'channel', 'audience', 'key', 'title', 'subject', 'heading', 'body', 'cta', 'active', 'order'],
@@ -52,10 +53,10 @@ var BrasaLogic = (function () {
   ['created_at', 'updated_at', 'paid_at', 'order', 'price', 'anchor_price', 'max_installments', 'guarantee_days', 'access_days',
     'aff_commission', 'aff_cookie_days', 'lp_updated_at', 'ads_updated_at', 'scarcity_until', 'release_days', 'release_at', 'duration_min', 'xp',
     'expires_at', 'position', 'completed_at', 'discount', 'amount', 'installments', 'fee', 'net', 'commission', 'ts', 'value',
-    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at', 'tries', 'sent_at'].forEach(function (k) { NUM[k] = 1; });
+    'max_uses', 'uses', 'hours', 'streak', 'last_seen', 'reset_exp', 'count', 'checked_at', 'seller_commission', 'seller_max_discount', 'bump_price', 'upsell_price', 'upsell_minutes', 'bump_amount', 'starts_at', 'ends_at', 'priority', 'clicks', 'next_at', 'last_at', 'released_at', 'tries', 'sent_at', 'spend', 'impressions', 'reach', 'link_clicks', 'lp_views', 'checkouts', 'purchases', 'purchase_value'].forEach(function (k) { NUM[k] = 1; });
   var BOOL = {};
   ['featured', 'show_title', 'free_preview', 'aff_enabled', 'aff_auto', 'active', 'liked', 'read_admin', 'read_user', 'recovery_sent', 'capi_sent', 'bump_enabled', 'upsell_enabled', 'done'].forEach(function (k) { BOOL[k] = 1; });
-  var ID_PREFIX = { Users: 'u', Courses: 'c', Seasons: 's', Lessons: 'l', Enrollments: 'e', Progress: 'p', Orders: 'o', Affiliations: 'a', Clicks: 'k', Commissions: 'm', Payouts: 'y', Coupons: 'q', Messages: 'g', Certificates: 'x', Logs: 'z', Templates: 't', Emails: 'w', Banners: 'b', Leads: 'd', Activities: 'v', Offers: 'f', Intents: 'i' };
+  var ID_PREFIX = { Users: 'u', Courses: 'c', Seasons: 's', Lessons: 'l', Enrollments: 'e', Progress: 'p', Orders: 'o', Affiliations: 'a', Clicks: 'k', Commissions: 'm', Payouts: 'y', Coupons: 'q', Messages: 'g', Certificates: 'x', Logs: 'z', Templates: 't', Emails: 'w', Banners: 'b', Leads: 'd', Activities: 'v', Offers: 'f', Intents: 'i', AdStats: 'n' };
 
   var DEFAULT_CONFIG = {
     brand_name: 'BRASA',
@@ -75,6 +76,7 @@ var BrasaLogic = (function () {
     recovery_delay_min: 60,
     ai_model: 'claude-sonnet-5-5',
     meta_api_version: 'v24.0',
+    meta_ad_account: '',
     github_repo: '',
     github_branch: 'main',
     email_sender_name: 'BRASA',
@@ -95,7 +97,7 @@ var BrasaLogic = (function () {
     email_provider: 'gmail',
     email_from: ''
   };
-  var SECRET_KEYS = ['MP_ACCESS_TOKEN', 'AI_API_KEY', 'GITHUB_TOKEN', 'META_CAPI_TOKEN', 'EMAIL_API_KEY', 'CRM_WEBHOOK_URL'];
+  var SECRET_KEYS = ['MP_ACCESS_TOKEN', 'AI_API_KEY', 'GITHUB_TOKEN', 'META_CAPI_TOKEN', 'META_ADS_TOKEN', 'EMAIL_API_KEY', 'CRM_WEBHOOK_URL'];
 
   var RANKS = [
     { min: 1, name: 'Iniciado' }, { min: 3, name: 'Andarilho' }, { min: 5, name: 'Guerreiro' },
@@ -1694,6 +1696,148 @@ var BrasaLogic = (function () {
       return o;
     }
 
+    /* ----- anúncios: números da Meta cruzados com as vendas reais (UTM) ----- */
+    // Na Meta, em "Parâmetros de URL" do anúncio, use: utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}
+    var ADS_UTM = 'utm_source=meta&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}';
+    function isAdsOrder(o) { return /^(meta|facebook|fb|instagram|ig|an|messenger|threads)$/i.test(trim(o.utm_source)) && !/organic|bio|org/i.test(trim(o.utm_medium)) || /^(paid|cpc|ads|pago|paid_social|cpm)$/i.test(trim(o.utm_medium)); }
+    function nkey(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ''); }
+    function actionVal(list, types) {
+      var v = 0;
+      (list || []).some(function (a) { if (types.indexOf(a.action_type) > -1) { v = Number(a.value) || 0; return true; } return false; });
+      return v;
+    }
+    var BUY = ['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase'];
+    var CHK = ['initiate_checkout', 'omni_initiated_checkout', 'offsite_conversion.fb_pixel_initiate_checkout'];
+    function upsertAd(row) {
+      var ex = T('AdStats').find(function (x) { return x.date === row.date && (row.ad_id ? x.ad_id === row.ad_id : nkey(x.campaign) === nkey(row.campaign) && nkey(x.ad) === nkey(row.ad) && nkey(x.adset) === nkey(row.adset)); });
+      if (ex) T('AdStats').update(ex.id, row); else T('AdStats').insert(row);
+    }
+    /** Puxa da API de anúncios da Meta o desempenho diário por anúncio dos últimos N dias. */
+    function adsSync(days) {
+      var conf = cfg(), token = env.secret('META_ADS_TOKEN'), acc = digits(conf.meta_ad_account);
+      if (!token || !acc || !env.metaGet) return { skipped: true };
+      var until = dayKey(now()), since = dayKey(now() - (Math.max(1, Math.min(90, days || 30)) - 1) * DAY);
+      var path = 'act_' + acc + '/insights', n = 0, pages = 0;
+      var params = { level: 'ad', time_increment: 1, time_range: JSON.stringify({ since: since, until: until }), limit: 500,
+        fields: 'campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,inline_link_clicks,actions,action_values' };
+      var r = env.metaGet(conf.meta_api_version || 'v24.0', path, params, token);
+      while (r) {
+        if (r.error) { env.setConfig({ ads_last_error: String(r.error.message || 'erro').slice(0, 300), ads_last_sync: now() }); cfgCache = null; throw err('A Meta recusou: ' + (r.error.message || 'erro'), 'ADS'); }
+        (r.data || []).forEach(function (x) {
+          upsertAd({ date: x.date_start, campaign_id: x.campaign_id, campaign: x.campaign_name, adset_id: x.adset_id, adset: x.adset_name, ad_id: x.ad_id, ad: x.ad_name,
+            spend: round2(Number(x.spend) || 0), impressions: Number(x.impressions) || 0, reach: Number(x.reach) || 0, clicks: Number(x.clicks) || 0, link_clicks: Number(x.inline_link_clicks) || 0,
+            lp_views: actionVal(x.actions, ['landing_page_view', 'omni_landing_page_view']), checkouts: actionVal(x.actions, CHK), purchases: actionVal(x.actions, BUY),
+            purchase_value: round2(actionVal(x.action_values, BUY)), source: 'api' });
+          n++;
+        });
+        pages++;
+        var next = r.paging && r.paging.next;
+        r = next && pages < 30 ? env.metaGet('', next, null, token) : null;
+      }
+      env.setConfig({ ads_last_sync: now(), ads_last_error: '' }); cfgCache = null;
+      return { rows: n, since: since, until: until };
+    }
+    // CSV exportado do Gerenciador de Anúncios (alternativa sem token)
+    function parseCsv(txt) {
+      var rows = [], row = [], cell = '', q = false, s = String(txt || '').replace(/^\ufeff/, '');
+      var sep = (s.split('\n')[0].match(/;/g) || []).length > (s.split('\n')[0].match(/,/g) || []).length ? ';' : ',';
+      for (var i = 0; i < s.length; i++) {
+        var ch = s[i];
+        if (q) { if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+        else if (ch === '"') q = true;
+        else if (ch === sep) { row.push(cell); cell = ''; }
+        else if (ch === '\n' || ch === '\r') { if (ch === '\r' && s[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+        else cell += ch;
+      }
+      if (cell || row.length) { row.push(cell); rows.push(row); }
+      return rows.filter(function (r) { return r.some(function (c) { return trim(c); }); });
+    }
+    function numBr(v) { var s = trim(v).replace(/[^\d,.-]/g, ''); if (!s) return 0; if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); if (s.indexOf(',') > -1 && s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.'); else s = s.replace(/,/g, ''); return Number(s) || 0; }
+    var CSV_COLS = {
+      date: ['dia', 'day', 'inicio dos relatorios', 'reporting starts', 'data'], campaign: ['nome da campanha', 'campaign name'], adset: ['nome do conjunto de anuncios', 'ad set name'], ad: ['nome do anuncio', 'ad name'],
+      spend: ['valor usado', 'amount spent'], impressions: ['impressoes', 'impressions'], reach: ['alcance', 'reach'], clicks: ['cliques todos', 'clicks all'], link_clicks: ['cliques no link', 'link clicks'],
+      lp_views: ['visualizacoes da pagina de destino', 'landing page views'], checkouts: ['finalizacoes de compra iniciadas', 'checkouts initiated'], purchases: ['compras', 'purchases'], purchase_value: ['valor de conversao de compras', 'purchases conversion value']
+    };
+    A.adminAdsImport = function (req) {
+      auth(req, 'admin');
+      var rows = parseCsv(req.csv);
+      need(rows.length > 1, 'O arquivo está vazio.');
+      var head = rows[0].map(function (h) { return String(h).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\(.*?\)/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); });
+      var col = {};
+      Object.keys(CSV_COLS).forEach(function (k) { col[k] = -1; CSV_COLS[k].some(function (n) { var i = head.findIndex(function (h) { return h === n || h.indexOf(n) === 0; }); if (i > -1) { col[k] = i; return true; } return false; }); });
+      need(col.spend > -1 && (col.campaign > -1 || col.ad > -1), 'Não achei as colunas de valor usado e campanha. Exporte o relatório do Gerenciador de Anúncios com "Dia" em Detalhamento.');
+      var n = 0, hoje = dayKey(now());
+      rows.slice(1).forEach(function (r) {
+        var g = function (k) { return col[k] > -1 ? r[col[k]] : ''; };
+        var camp = trim(g('campaign')), ad = trim(g('ad'));
+        if (!camp && !ad) return;
+        var d = trim(g('date')).slice(0, 10);
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) d = d.slice(6, 10) + '-' + d.slice(3, 5) + '-' + d.slice(0, 2);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) d = hoje;
+        upsertAd({ date: d, campaign_id: '', campaign: camp, adset_id: '', adset: trim(g('adset')), ad_id: '', ad: ad, spend: round2(numBr(g('spend'))), impressions: numBr(g('impressions')), reach: numBr(g('reach')),
+          clicks: numBr(g('clicks')), link_clicks: numBr(g('link_clicks')), lp_views: numBr(g('lp_views')), checkouts: numBr(g('checkouts')), purchases: numBr(g('purchases')), purchase_value: round2(numBr(g('purchase_value'))), source: 'csv' });
+        n++;
+      });
+      return { imported: n };
+    };
+    A.adminAdsSync = function (req) {
+      auth(req, 'admin');
+      need(env.secret('META_ADS_TOKEN') && digits(cfg().meta_ad_account), 'Cole o token de anúncios e o ID da conta de anúncios em Configurações > Anúncios.');
+      return adsSync(Number(req.days) || 30);
+    };
+    A.adminAds = function (req) {
+      auth(req, 'admin');
+      var t = now(), to = Number(req.to) || t, from = Number(req.from) || (to - 29 * DAY), conf = cfg();
+      var d0 = dayKey(from), d1 = dayKey(to);
+      var stats = T('AdStats').where(function (x) { return x.date >= d0 && x.date <= d1; });
+      var orders = T('Orders').all();
+      var paid = orders.filter(function (o) { return o.status === 'approved' && o.paid_at >= from && o.paid_at <= to; });
+      var adsPaid = paid.filter(isAdsOrder);
+      var refunds = orders.filter(function (o) { return (o.status === 'refunded' || o.status === 'chargeback') && o.updated_at >= from && o.updated_at <= to && isAdsOrder(o); });
+      var netOf = function (o) { return (o.net || o.amount) - (o.commission || 0) - (o.seller_commission || 0); };
+      var sum = function (l, k) { return l.reduce(function (s, x) { return s + (Number(x[k]) || 0); }, 0); };
+      var spend = round2(sum(stats, 'spend')), imp = sum(stats, 'impressions'), lc = sum(stats, 'link_clicks');
+      var revenue = round2(sum(adsPaid, 'amount')), net = round2(adsPaid.reduce(function (s, o) { return s + netOf(o); }, 0)), refundsVal = round2(sum(refunds, 'amount'));
+      var views = T('Clicks').where(function (k) { return k.ts >= from && k.ts <= to && /^(meta|facebook|fb|instagram|ig)$/i.test(trim(k.utm_source)); });
+      var div = function (a, b, m) { return b ? Math.round(a / b * (m || 1) * 100) / 100 : null; };
+      var k = {
+        spend: spend, impressions: imp, reach: sum(stats, 'reach'), clicks: sum(stats, 'clicks'), link_clicks: lc,
+        ctr: div(lc, imp, 100), cpc: div(spend, lc), cpm: div(spend, imp, 1000),
+        meta_lp_views: sum(stats, 'lp_views'), meta_checkouts: sum(stats, 'checkouts'), meta_purchases: sum(stats, 'purchases'), meta_value: round2(sum(stats, 'purchase_value')),
+        lp_views: views.filter(function (v) { return v.type === 'view'; }).length, checkouts: views.filter(function (v) { return v.type === 'checkout'; }).length,
+        sales: adsPaid.length, revenue: revenue, net: net, refunds: refunds.length, refunds_value: refundsVal,
+        roas: div(revenue, spend), roi: spend ? Math.round((net - refundsVal - spend) / spend * 1000) / 10 : null, profit: round2(net - refundsVal - spend),
+        cpa: div(spend, adsPaid.length), conv: div(adsPaid.length, lc, 100), ticket: div(revenue, adsPaid.length),
+        meta_roas: div(sum(stats, 'purchase_value'), spend)
+      };
+      // por campanha e por anúncio (o nome da Meta encontra o utm_campaign / utm_content da venda)
+      function grupo(keyMeta, keyUtm) {
+        var g = {};
+        var pick = function (key, label) { var x = g[key] = g[key] || { name: label, spend: 0, impressions: 0, link_clicks: 0, meta_purchases: 0, sales: 0, revenue: 0, net: 0 }; if (!x.name && label) x.name = label; return x; };
+        stats.forEach(function (s) { var x = pick(nkey(s[keyMeta]) || '(sem nome)', s[keyMeta]); x.spend += Number(s.spend) || 0; x.impressions += Number(s.impressions) || 0; x.link_clicks += Number(s.link_clicks) || 0; x.meta_purchases += Number(s.purchases) || 0; if (keyMeta === 'ad') x.campaign = s.campaign; });
+        adsPaid.forEach(function (o) { var x = pick(nkey(o[keyUtm]) || '(sem utm)', o[keyUtm] || '(venda sem utm_' + keyUtm.replace('utm_', '') + ')'); x.sales++; x.revenue += o.amount; x.net += netOf(o); });
+        return Object.keys(g).map(function (key) {
+          var x = g[key];
+          x.spend = round2(x.spend); x.revenue = round2(x.revenue); x.net = round2(x.net);
+          x.ctr = div(x.link_clicks, x.impressions, 100); x.cpc = div(x.spend, x.link_clicks); x.cpa = x.spend ? div(x.spend, x.sales) : null; x.roas = div(x.revenue, x.spend);
+          x.roi = x.spend ? Math.round((x.net - x.spend) / x.spend * 1000) / 10 : null;
+          return x;
+        }).sort(function (a, b) { return b.spend - a.spend || b.revenue - a.revenue; });
+      }
+      var nd = Math.min(120, Math.max(1, Math.round((to - from) / DAY) + 1)), series = [], map = {};
+      for (var i = nd - 1; i >= 0; i--) { var key = dayKey(to - i * DAY); if (!map[key]) { map[key] = { d: key, label: dayLabel(key), spend: 0, revenue: 0 }; series.push(map[key]); } }
+      stats.forEach(function (s) { if (map[s.date]) map[s.date].spend = round2(map[s.date].spend + (Number(s.spend) || 0)); });
+      adsPaid.forEach(function (o) { var s = map[dayKey(o.paid_at)]; if (s) s.revenue = round2(s.revenue + o.amount); });
+      var src = {};
+      paid.forEach(function (o) { var kk = isAdsOrder(o) ? 'Anúncios (Meta)' : o.aff_code ? 'Afiliados' : o.seller_id ? 'Vendedores' : trim(o.utm_source) ? trim(o.utm_source) + (trim(o.utm_medium) ? ' / ' + trim(o.utm_medium) : '') : 'Direto'; src[kk] = src[kk] || { name: kk, sales: 0, revenue: 0 }; src[kk].sales++; src[kk].revenue = round2(src[kk].revenue + o.amount); });
+      var semUtm = adsPaid.filter(function (o) { return !trim(o.utm_campaign); }).length;
+      return {
+        from: from, to: to, kpis: k, series: series, campaigns: grupo('campaign', 'utm_campaign'), ads: grupo('ad', 'utm_content').slice(0, 40),
+        sources: Object.keys(src).map(function (x) { return src[x]; }).sort(function (a, b) { return b.revenue - a.revenue; }),
+        setup: { token: !!env.secret('META_ADS_TOKEN'), account: digits(conf.meta_ad_account), last_sync: conf.ads_last_sync || 0, last_error: conf.ads_last_error || '', rows: T('AdStats').all().length, utm: ADS_UTM, sales_without_utm: semUtm, pixel: !!conf.pixel_id }
+      };
+    };
+
     A.adminDash = function (req) {
       auth(req, 'admin');
       var t = now(), to = Number(req.to) || t, from = Number(req.from) || (to - 29 * DAY), I = idx();
@@ -2257,6 +2401,7 @@ var BrasaLogic = (function () {
       Object.keys(DEFAULT_CONFIG).forEach(function (k) { if (inc[k] !== undefined) patch[k] = typeof inc[k] === 'object' ? JSON.stringify(inc[k]) : inc[k]; });
       if (patch.site_url) patch.site_url = String(patch.site_url).trim().replace(/\/?$/, '/');
       if (patch.pixel_id !== undefined) patch.pixel_id = digits(patch.pixel_id);
+      if (patch.meta_ad_account !== undefined) patch.meta_ad_account = digits(patch.meta_ad_account);
       if (Object.keys(patch).length) env.setConfig(patch);
       var s = req.secrets || {};
       SECRET_KEYS.forEach(function (k) { if (s[k] !== undefined && s[k] !== null && String(s[k]).trim() !== '') env.setSecret(k, String(s[k]).trim()); if (s[k] === '__clear__') env.setSecret(k, ''); });
@@ -3188,6 +3333,8 @@ var BrasaLogic = (function () {
         } catch (e) { env.log('error', 'rotina', String(e.message || e), { order: o.id }); }
       });
       res.crm = safe(syncLeads, 'crm') || {};
+      // anúncios: puxa os números da Meta a cada 6 horas (últimos 3 dias, que a Meta ainda ajusta)
+      if (env.cache && !env.cache.get('ads:auto')) { env.cache.put('ads:auto', '1', 21600); res.ads = safe(function () { return adsSync(3); }, 'ads') || {}; }
       res.crm_out = safe(function () { var r = crmFlush(); crmCleanup(); return r; }, 'crm-out') || {};
       return res;
     }
