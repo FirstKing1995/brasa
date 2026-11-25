@@ -41,6 +41,7 @@
     var r = C.$('#ms-raiz'); if (!r) return;
     var d = dados, h = '';
     var total = d.pedidos.length + d.aprovacoes.length + d.missoes.length + d.esperando.length + d.tarefas.length + d.posts_celular.length + (d.notas ? 1 : 0);
+    h += '<label class="check" style="margin:0 0 14px;display:flex;gap:8px;align-items:center"><input type="checkbox" id="ms-estudio"' + (d.estudio_auto ? ' checked' : '') + '> Estúdio: quando você entregar o vídeo de um reels, o Claude Code do PC edita sozinho (corte, 9:16, áudio, título) e devolve pronto</label>';
     if (d.ia_erro) h += '<div class="aviso" style="margin-bottom:16px">' + ic('alerta') + '<div><b>A IA parou com erro:</b> ' + esc(d.ia_erro) + '. Veja em Ajustes &gt; IA.</div></div>';
     if (!total) h += '<div class="card" style="text-align:center;padding:40px 20px;margin-bottom:16px">' + ic('check') + '<h3 style="margin:10px 0 4px">Mesa limpa</h3><p class="muted" style="margin:0">Nada esperando por você agora. A equipe avisa quando precisar.</p></div>';
 
@@ -55,6 +56,7 @@
     if (d.notas) h += bloco('Notas fiscais', 'nota', d.notas, vazio(d.notas + ' nota(s) para emitir ou cancelar no Emissor Nacional.'), '<button class="btn peq" data-ir="escritorio">Abrir o Financeiro</button>');
     if (d.entregues.length) h += bloco('Entregues recentemente', 'upload', 0, lista(d.entregues.map(function (p) { return [p.titulo, 'Entregue em ' + dataBr(p.entregue_em)]; })));
     r.innerHTML = h;
+    var ce = C.$('#ms-estudio', r); if (ce) ce.onchange = function () { C.api('config.salvar', { config: { ESTUDIO_AUTO: ce.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }).catch(function (e) { C.toast(e.message, 'erro'); }); };
     C.$$('[data-ir]', r).forEach(function (b) { b.onclick = function () { C.ir(b.dataset.ir); }; });
     C.$$('[data-pd-entregar]', r).forEach(function (b) { b.onclick = function () { entregar(d.pedidos.filter(function (x) { return x.id === b.dataset.pdEntregar; })[0]); }; });
     C.$$('[data-pd-ver]', r).forEach(function (b) { b.onclick = function () { verPedido(d.pedidos.filter(function (x) { return x.id === b.dataset.pdVer; })[0]); }; });

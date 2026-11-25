@@ -2912,6 +2912,40 @@ var BrasaLogic = (function () {
         return { course: x.c.title, lesson: x.l.label + ' ' + x.l.title, text: trecho, link: siteUrl() + 'index.html#/aula/' + encodeURIComponent(x.l.id) };
       }) };
     };
+    /** Só aceita vídeo do YouTube (as aulas sobem como não listadas). */
+    function ytVideo(u) {
+      var m = String(u || '').trim().match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/)|youtu\.be\/)([\w-]{6,20})/);
+      return m ? { url: 'https://www.youtube.com/watch?v=' + m[1], thumb: 'https://img.youtube.com/vi/' + m[1] + '/hqdefault.jpg' } : null;
+    }
+    // aulas que o Claude Code subiu no YouTube: entram no curso certo (cria o rascunho se ele ainda não existe)
+    A.bridgeLessonsImport = function (req) {
+      bridgeAuth(req);
+      var lessons = (Array.isArray(req.lessons) ? req.lessons : []).filter(function (l) { return l && trim(l.title) && ytVideo(l.video_url); }).slice(0, 60);
+      need(lessons.length, 'Nenhuma aula com vídeo do YouTube.');
+      var norm = function (s) { return trim(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' '); };
+      var c = req.course_id ? T('Courses').get(req.course_id) : null, created = false;
+      if (!c && trim(req.course_title)) c = T('Courses').find(function (x) { return norm(x.title) === norm(req.course_title); });
+      if (!c) {
+        need(trim(req.course_title).length >= 3, 'Diga o nome do curso.');
+        var r0 = A.bridgeCourseDraft({ key: req.key, course: { title: req.course_title } });
+        c = T('Courses').get(r0.id); created = true;
+      }
+      var seas = T('Seasons').where(function (s) { return s.course_id === c.id; }).sort(function (a, b) { return a.order - b.order; });
+      var sea = seas.find(function (s) { return norm(s.title) === norm(req.season_title || 'Aulas'); }) || seas[0];
+      if (!sea) sea = T('Seasons').insert({ course_id: c.id, order: 1, title: trim(req.season_title || 'Aulas').slice(0, 120), description: '', release_mode: 'now', release_days: 0, release_at: 0 });
+      var todas = T('Lessons').where(function (l) { return l.course_id === c.id; });
+      var ordem = todas.filter(function (l) { return l.season_id === sea.id; }).reduce(function (m, l) { return Math.max(m, l.order); }, 0);
+      var upd = 0, novas = 0;
+      lessons.forEach(function (ld) {
+        var yv = ytVideo(ld.video_url), ja = todas.find(function (l) { return norm(l.title) === norm(ld.title); });
+        if (ja) { T('Lessons').update(ja.id, { video_url: yv.url, thumb: ja.thumb && !/img\.youtube\.com/.test(ja.thumb) ? ja.thumb : yv.thumb, duration_min: ld.duration_min ? clamp(ld.duration_min, 0, 1000) : ja.duration_min }); upd++; return; }
+        ordem++;
+        todas.push(T('Lessons').insert({ course_id: c.id, season_id: sea.id, order: ordem, title: trim(ld.title).slice(0, 160), description: String(ld.description || '').slice(0, 4000), video_url: yv.url, duration_min: clamp(ld.duration_min || 0, 0, 1000), thumb: yv.thumb, materials: '[]', free_preview: false, xp: 50 }));
+        novas++;
+      });
+      memo = {};
+      return { id: c.id, title: c.title, status: c.status, created: created, updated: upd, added: novas, admin_link: siteUrl() + 'admin.html#/curso/' + encodeURIComponent(c.id) };
+    };
     // equipe de Produto do CRM: cria o rascunho de um curso novo (sempre como rascunho, o ADM revisa e publica)
     A.bridgeCourseDraft = function (req) {
       bridgeAuth(req);
@@ -2937,7 +2971,8 @@ var BrasaLogic = (function () {
         var sea = T('Seasons').insert({ course_id: c.id, order: si + 1, title: trim(sd.title).slice(0, 120), description: String(sd.description || '').slice(0, 2000), release_mode: 'now', release_days: 0, release_at: 0 });
         (Array.isArray(sd.lessons) ? sd.lessons : []).slice(0, 30).forEach(function (ld, li) {
           if (!trim(ld.title)) return;
-          T('Lessons').insert({ course_id: c.id, season_id: sea.id, order: li + 1, title: trim(ld.title).slice(0, 160), description: String(ld.description || '').slice(0, 4000), video_url: '', duration_min: clamp(ld.duration_min || 0, 0, 1000), thumb: '', materials: '[]', free_preview: false, xp: 50 });
+          var yv = ytVideo(ld.video_url);
+          T('Lessons').insert({ course_id: c.id, season_id: sea.id, order: li + 1, title: trim(ld.title).slice(0, 160), description: String(ld.description || '').slice(0, 4000), video_url: yv ? yv.url : '', duration_min: clamp(ld.duration_min || 0, 0, 1000), thumb: yv ? yv.thumb : '', materials: '[]', free_preview: false, xp: 50 });
           aulas++;
         });
       });

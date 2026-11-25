@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.9.1';
+var PRUMO_VERSAO = '1.10.0';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -138,7 +138,7 @@ var PRUMO_CONFIG_PADRAO = {
   DIRETORIA_ATIVA: 'SIM', DIRETORIA_ULTIMA: '', JURIDICO_AUTO: 'SIM',
   // Marketing (calendário de posts toda segunda) e Produto (ideias todo mês); comentários do Instagram respondidos pela IA
   // Missões para o Claude Code no PC (navegador logado), TI e Qualidade
-  MISSOES_CHAVE: '', MISSOES_VISTO: '', TI_ATIVO: 'SIM', TI_ULTIMO: '', QUALIDADE_ATIVO: 'SIM', QUALIDADE_ULTIMO: '',
+  MISSOES_CHAVE: '', MISSOES_VISTO: '', TI_ATIVO: 'SIM', TI_ULTIMO: '', QUALIDADE_ATIVO: 'SIM', QUALIDADE_ULTIMO: '', ESTUDIO_AUTO: 'SIM',
   MKT_ATIVO: 'SIM', MKT_POSTS_SEMANA: '5', MKT_ULTIMO: '', PRODUTO_AUTO: 'SIM', PRODUTO_ULTIMO: '', IG_COMENTARIOS: 'NAO',
   PROX_TRABALHO: ''
 };
@@ -4425,6 +4425,8 @@ function PrumoLogica(P) {
     'instagram.bio': { nome: 'Atualizar a bio do Instagram', chrome: true },
     'nfse.emitir': { nome: 'Emitir notas no Emissor Nacional', chrome: true },
     'meta_ads.campanha': { nome: 'Montar campanha pausada no Gerenciador de Anúncios', chrome: true },
+    'youtube.subir': { nome: 'Subir aulas no YouTube (não listado)', chrome: true },
+    'estudio.editar': { nome: 'Editar vídeo para reels (Estúdio)', chrome: false },
     'livre': { nome: 'Tarefa no navegador', chrome: true },
     'codigo': { nome: 'Melhoria no código da BRASA (TI)', chrome: false }
   };
@@ -4443,7 +4445,7 @@ function PrumoLogica(P) {
   MI.brl = function (v) { return U.num(v).toFixed(2).replace('.', ','); };
   /** Monta a tarefa que o Claude Code recebe e os arquivos que o executor baixa antes. */
   MI.preparar = function (m) {
-    var d = U.json(m.dados, {}) || {}, txt = '', baixar = [], cwd = 'trabalho', ferramentas = ['mcp__claude-in-chrome'], tempo = 30;
+    var d = U.json(m.dados, {}) || {}, txt = '', baixar = [], cwd = 'trabalho', ferramentas = ['mcp__claude-in-chrome'], tempo = 30, pastas = [];
     if (m.tipo === 'instagram.agendar') {
       txt = 'MISSÃO: agendar posts no Instagram pelo Meta Business Suite (https://business.facebook.com/latest/content_calendar), conta da BRASA.\n' +
         'Para cada post abaixo: crie um post (feed) ou story, envie a imagem do arquivo indicado (use a ferramenta de envio de arquivo), cole a legenda exatamente como está, escolha "Programar" na data e hora indicadas (horário de Brasília) e confirme a programação. Não publique na hora.\n\n' +
@@ -4462,6 +4464,34 @@ function PrumoLogica(P) {
     } else if (m.tipo === 'meta_ads.campanha') {
       txt = 'MISSÃO: montar no Gerenciador de Anúncios da Meta (https://adsmanager.facebook.com) a campanha descrita no plano abaixo, deixando TUDO PAUSADO (campanha, conjuntos e anúncios). Nunca ative, nunca publique com veiculação ligada e nunca mexa em forma de pagamento. Se precisar de imagens, use as que já estiverem na conta ou deixe o anúncio como rascunho.\n\nPLANO:\n<<<\n' + U.cap(d.plano, 12000) + '\n>>>\n\nNo JSON final inclua "campanha": nome da campanha criada e "pausada": true.';
       tempo = 40;
+    } else if (m.tipo === 'estudio.editar') {
+      ferramentas = ['Read', 'Write', 'Glob', 'Bash(ffmpeg:*)', 'Bash(ffprobe:*)'];
+      baixar.push({ url: d.video, nome: 'bruto.' + (d.ext || 'mp4') });
+      txt = 'MISSÃO DO ESTÚDIO DE CONTEÚDO: transformar o vídeo bruto {{arquivo:bruto.' + (d.ext || 'mp4') + '}} num reels pronto para o Instagram, usando só ffmpeg e ffprobe (já instalados). Trabalhe só nesta pasta.\n' +
+        'Post: "' + d.titulo + '"\nRoteiro de referência (não precisa seguir à risca):\n<<<\n' + U.cap(d.roteiro, 1500) + '\n>>>\n\n' +
+        'Faça, nesta ordem:\n' +
+        '1) ffprobe para ver duração, tamanho e rotação.\n' +
+        '2) Corte o silêncio do começo e do fim (silencedetect, ruído -35dB, mínimo 0,6 s). Não corte no meio da fala.\n' +
+        '3) Formato vertical 1080x1920 (9:16): se o vídeo for horizontal, use o vídeo escalado no centro e o mesmo vídeo desfocado (boxblur) preenchendo o fundo. Se já for vertical, só ajuste o tamanho.\n' +
+        '4) Áudio normalizado (loudnorm I=-14:TP=-1.5:LRA=11), AAC 160k.\n' +
+        '5) Nos 3 primeiros segundos, o título "' + U.cap(d.arte_titulo || d.titulo, 60).replace(/["\\]/g, '') + '" em caixa alta com drawtext, fonte Arial Black ou Arial Bold do Windows (C\\:/Windows/Fonts/ariblk.ttf ou arialbd.ttf), cor branca com borda preta de 4 px, centralizado na altura de 18% da tela, tamanho que caiba na largura (quebre em duas linhas se precisar).\n' +
+        '6) Uma barra fina na cor ' + (d.cor || '#E2A72E') + ' na base do vídeo (12 px) crescendo da esquerda para a direita ao longo do vídeo (drawbox com largura proporcional ao tempo).\n' +
+        '7) Exporte H.264 (libx264, preset medium, yuv420p, 30 fps, +faststart) como reels-final.mp4 com no máximo 19 MB: se passar, refaça com bitrate menor. Duração final ideal de 15 a 60 s; se o bruto for maior que 90 s, não corte o conteúdo, só avise no resumo.\n' +
+        '8) Confira o arquivo final com ffprobe.\n\n' +
+        'No JSON final inclua "saidas": ["reels-final.mp4"], "duracao_s": duração final e "observacoes": o que você percebeu (áudio baixo, imagem escura, fala cortada).';
+      tempo = 25;
+    } else if (m.tipo === 'youtube.subir') {
+      ferramentas = ['mcp__claude-in-chrome', 'Glob'];
+      pastas = [d.pasta];
+      txt = 'MISSÃO: subir aulas gravadas no YouTube do dono como NÃO LISTADAS, para o curso "' + d.curso + '" da BRASA.\n' +
+        'Pasta das aulas no computador: ' + d.pasta + '\n\n' +
+        '1) Liste os vídeos (.mp4, .mov, .mkv, .webm) da pasta e das subpastas com a ferramenta Glob. Ignore pastas de brutos, anúncios ou rascunhos (BRUTOS, ADS, RMK, MATERIAL de apoio sem aula) e arquivos com 0 bytes ou que pareçam cortes soltos.\n' +
+        '2) Ordene pela aula (boas-vindas primeiro, depois AULA 1, 2, 3..., aulas extras no fim).\n' +
+        (d.feitos && d.feitos.length ? '3) Estes arquivos JÁ foram enviados, pule: ' + d.feitos.join(' | ') + '\n' : '3) Nenhum arquivo foi enviado ainda.\n') +
+        '4) Envie no máximo ' + d.max + ' vídeo(s) nesta rodada. Para cada um, em https://studio.youtube.com (canal já logado): Criar > Enviar vídeos, envie o arquivo pelo caminho completo com a ferramenta de envio de arquivo, título = nome limpo da aula (sem extensão, sem "parte" repetida, até 100 caracteres), descrição curta "Aula do curso ' + d.curso + '", marque "Não, não é conteúdo para crianças", em Visibilidade escolha "Não listado" e salve. Não precisa esperar o processamento em HD: basta o envio terminar e o link existir. Copie o link do vídeo (youtu.be/...).\n' +
+        '5) Não mude nada no canal além dos vídeos enviados. Não publique como público.\n\n' +
+        'No JSON final inclua "enviados": [{"arquivo": "caminho completo", "titulo": "...", "url": "https://youtu.be/...", "duracao_min": minutos aproximados}], "falhas": [{"arquivo": "...", "motivo": "..."}] e "restantes": quantos vídeos da pasta ainda faltam enviar.';
+      tempo = 90;
     } else if (m.tipo === 'livre') {
       txt = 'MISSÃO pedida pelo dono do sistema:\n<<<\n' + U.cap(m.instrucoes, 4000) + '\n>>>';
       tempo = 30;
@@ -4473,7 +4503,7 @@ function PrumoLogica(P) {
         'No JSON final inclua "ramo": nome do ramo, "testes": resultado dos testes e "arquivos": lista dos arquivos alterados.';
       tempo = 45;
     }
-    return { id: m.id, tipo: m.tipo, titulo: m.titulo, chrome: !!MI.TIPOS[m.tipo].chrome, ferramentas: ferramentas, cwd: cwd, baixar: baixar.filter(function (x) { return /^https:\/\//.test(x.url); }), tempo_min: Math.min(90, tempo),
+    return { id: m.id, tipo: m.tipo, titulo: m.titulo, chrome: !!MI.TIPOS[m.tipo].chrome, ferramentas: ferramentas, cwd: cwd, baixar: baixar.filter(function (x) { return /^https:\/\//.test(x.url); }), pastas: pastas, tempo_min: Math.min(90, tempo),
       sistema: MI.SEGURANCA, prompt: txt };
   };
   /** O que o executor no PC chama (chave própria em ?src=missoes). */
@@ -4485,6 +4515,16 @@ function PrumoLogica(P) {
       if (!m) return { ok: true, missao: null };
       P.atualizar('Missoes', m.id, { status: 'executando', iniciada_em: P.agora(), tentativas: String(U.num(m.tentativas) + 1) });
       return { ok: true, missao: MI.preparar(m) };
+    }
+    if (b.acao === 'arquivo') {
+      // o executor devolve o arquivo pronto (ex.: o reels editado) para o Drive
+      var mx = P.tabela('Missoes').filter(function (x) { return x.id === b.id && x.status === 'executando'; })[0];
+      if (!mx) throw new Error('Missão não está rodando.');
+      var b64 = U.str(b.base64);
+      if (!b64 || b64.length > 28000000) throw new Error('Arquivo vazio ou maior que 20 MB.');
+      if (!P.midia || !P.midia.arquivo) throw new Error('Envio de arquivos indisponível.');
+      var nome = U.cap(U.str(b.nome).replace(/[^\w.\- ]+/g, '') || 'arquivo', 80);
+      return { ok: true, url: P.midia.arquivo(b64, mx.id + ' - ' + nome, /^(video|image|audio)\/[\w.+-]+$/.test(U.str(b.mime)) ? b.mime : 'application/octet-stream') };
     }
     if (b.acao === 'concluir') return MI.concluir(b);
     throw new Error('Ação desconhecida.');
@@ -4506,12 +4546,47 @@ function PrumoLogica(P) {
         if (n && (e.numero || e.chave)) { NF.emitida(n, U.str(e.numero), e.chave ? 'https://www.nfse.gov.br/ConsultaPublica/?chave=' + encodeURIComponent(U.str(e.chave).replace(/\D/g, '')) : '', u); efeitos.push(n.id); }
       });
     }
+    var extra = '';
+    if (m.tipo === 'youtube.subir') extra = MI.aulasEnviadas(m, d, r, efeitos);
+    if (m.tipo === 'estudio.editar') {
+      var final = (Array.isArray(r.saidas_urls) ? r.saidas_urls : []).filter(function (x) { return /^https:\/\//.test(U.str(x)); })[0];
+      var post = P.tabela('Posts').filter(function (x) { return x.id === d.post_id; })[0];
+      if (final && post) {
+        P.atualizar('Posts', post.id, { material_url: U.cap(final, 600), atualizado_em: P.agora() });
+        efeitos.push(post.id);
+        extra = 'Reels editado pronto: ' + final + (r.observacoes ? ' Observações: ' + U.cap(r.observacoes, 400) : '');
+        hist('', '', null, 'estudio', 'Reels editado: ' + post.titulo);
+      } else if (st === 'concluida') { st = 'erro'; r.resumo = (r.resumo || '') + ' O vídeo final não voltou para o CRM.'; }
+    }
     var mud = { status: st === 'concluida' || st === 'parcial' ? st : 'erro', resultado: U.cap(r.resumo || b.texto || '', 3000), erro: st === 'precisa_login' ? 'Precisa entrar no site antes (login no Chrome)' : st === 'erro' ? U.cap(r.resumo || b.erro || 'Falhou', 500) : '',
       custo: String(U.num(b.custo)), concluida_em: P.agora() };
+    if (extra) mud.resultado = U.cap(mud.resultado + ' ' + extra, 3000);
     if (m.tipo === 'codigo' && r.ramo) mud.resultado = U.cap('Ramo ' + r.ramo + '. ' + (r.testes ? 'Testes: ' + r.testes + '. ' : '') + (r.resumo || ''), 3000);
     P.atualizar('Missoes', m.id, mud);
     hist('', '', null, 'missao', 'Missão ' + mud.status + ': ' + m.titulo + (efeitos.length ? ' (' + efeitos.length + ' itens)' : ''));
     return { ok: true, status: mud.status, efeitos: efeitos.length };
+  };
+  /** Aulas que subiram no YouTube vão para o curso na BRASA; se faltar vídeo, a próxima rodada já entra na fila. */
+  MI.aulasEnviadas = function (m, d, r, efeitos) {
+    var ok = (Array.isArray(r.enviados) ? r.enviados : []).filter(function (e) { return e && /^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(U.str(e.url)) && U.str(e.titulo).trim(); });
+    if (!ok.length) return '';
+    var msg = '';
+    try {
+      var br = BR.chamar('bridgeLessonsImport', { course_id: d.curso_id || '', course_title: d.curso, lessons: ok.map(function (e) { return { title: U.cap(e.titulo, 160), video_url: U.str(e.url).trim(), duration_min: Math.round(U.num(e.duracao_min)) }; }) });
+      d.curso_id = br.id;
+      ok.forEach(function (e) { efeitos.push(e.url); });
+      msg = 'Na BRASA: ' + br.added + ' aula(s) nova(s) e ' + br.updated + ' atualizada(s) em "' + br.title + '"' + (br.created ? ' (curso criado como rascunho)' : '') + '.';
+      hist('', '', null, 'produto', 'Aulas do YouTube no curso ' + br.title + ': ' + ok.length);
+    } catch (e) { msg = 'Os vídeos subiram, mas não consegui ligar na BRASA: ' + e.message + '. Os links estão no resultado.'; }
+    var feitos = (d.feitos || []).concat(ok.map(function (e) { return U.cap(e.arquivo, 300); }));
+    P.atualizar('Missoes', m.id, { dados: U.cap(JSON.stringify(Object.assign({}, d, { feitos: feitos })), 45000) });
+    if (U.num(r.restantes) > 0 && U.num(d.rodada) < 20) {
+      MI.criar({ tipo: 'youtube.subir', titulo: 'Subir aulas de ' + d.curso + ' no YouTube (rodada ' + (U.num(d.rodada) + 2) + ')', dados: Object.assign({}, d, { feitos: feitos, rodada: U.num(d.rodada) + 1 }), origem: 'equipe' }, { nome: 'Produto' });
+      msg += ' Faltam ' + U.num(r.restantes) + ': a próxima rodada já está na fila.';
+    } else if (U.num(r.restantes) <= 0) {
+      PD.criar({ tipo: 'outro', titulo: 'Revisar e publicar o curso ' + d.curso, briefing: 'As aulas de ' + d.curso + ' já estão no YouTube (não listadas) e ligadas ao curso na BRASA. Confira a ordem, capas e preço no ADM e publique quando quiser. Se alguma aula estiver defasada, anote aqui o que regravar.', origem_tipo: 'curso_youtube', origem_id: d.curso_id || d.curso, criado_por: 'Produto (IA)' });
+    }
+    return msg;
   };
   /** Missão presa (o PC desligou no meio): volta para a fila uma vez, depois vira erro. */
   MI.vigiar = function () {
@@ -4638,6 +4713,12 @@ function PrumoLogica(P) {
       var doc = P.tabela('Documentos').filter(function (x) { return x.id === b.documento_id; })[0];
       if (!doc) throw new Error('Escolha o plano da campanha.');
       d = { plano: doc.conteudo }; titulo = 'Montar pausada: ' + doc.titulo;
+    } else if (tipo === 'youtube.subir') {
+      var pasta = U.str(b.pasta).trim().replace(/[\\/]+$/, '');
+      if (!/^[A-Za-z]:[\\/]/.test(pasta) || /\.\.|[<>|?*"]/.test(pasta)) throw new Error('Cole o caminho completo da pasta, por exemplo F:\\CURSOS\\MEU CURSO.');
+      if (U.str(b.curso).trim().length < 3) throw new Error('Diga o nome do curso na BRASA.');
+      d = { pasta: U.cap(pasta, 300), curso: U.cap(U.str(b.curso).trim(), 120), curso_id: U.cap(b.curso_id, 40), max: Math.max(1, Math.min(8, Math.round(U.num(b.max) || 4))), feitos: [], rodada: 0 };
+      titulo = 'Subir aulas de ' + d.curso + ' no YouTube';
     } else if (tipo === 'livre' || tipo === 'codigo') {
       if (U.str(b.instrucoes).trim().length < 10) throw new Error('Descreva a tarefa com mais detalhes.');
     } else throw new Error('Tipo de missão desconhecido.');
@@ -4685,9 +4766,26 @@ function PrumoLogica(P) {
     if (p.origem_tipo === 'post') {
       var post = P.tabela('Posts').filter(function (x) { return x.id === p.origem_id; })[0];
       if (post) P.atualizar('Posts', post.id, { material_url: arqs[0].url, atualizado_em: P.agora() });
+      if (post && post.tipo === 'reels' && p.tipo === 'video') PD.estudio(post, arqs);
     }
     hist('', '', user, 'pedido', 'Material entregue: ' + p.titulo + ' (' + arqs.length + ' arquivo' + (arqs.length > 1 ? 's' : '') + ')');
     return Object.assign(p, mud);
+  };
+  /** Link que o executor consegue baixar: arquivo do Drive vira download direto; YouTube não serve. */
+  PD.baixavel = function (url) {
+    url = U.str(url);
+    var m = url.match(/^https:\/\/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=download&)?id=)([\w-]{20,})/);
+    if (m) return 'https://drive.google.com/uc?export=download&id=' + m[1];
+    if (/^https:\/\/[^/]+\/.+\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(url) && !/youtu/.test(url)) return url;
+    return '';
+  };
+  PD.estudio = function (post, arqs) {
+    var k = cfg();
+    if (k.ESTUDIO_AUTO === 'NAO' || !k.MISSOES_CHAVE) return null;
+    var v = arqs.map(function (a) { return { url: PD.baixavel(a.url), nome: a.nome }; }).filter(function (a) { return a.url; })[0];
+    if (!v) return null;
+    var ext = (U.str(v.nome).match(/\.(mp4|mov|m4v|webm)$/i) || [0, 'mp4'])[1].toLowerCase();
+    return MI.criar({ tipo: 'estudio.editar', titulo: 'Editar o reels: ' + post.titulo, dados: { post_id: post.id, titulo: post.titulo, arte_titulo: post.arte_titulo, roteiro: post.roteiro, video: v.url, ext: ext, cor: k.COR_PRIMARIA || '#E2A72E' }, origem: 'equipe' }, { nome: 'Estúdio' });
   };
   /** Tudo o que depende do dono num lugar só. */
   PD.mesa = function (u) {
@@ -4704,7 +4802,8 @@ function PrumoLogica(P) {
       esperando: P.tabela('Contatos').filter(function (c) { return c.ia_estado === 'humano' && c.ultima_direcao === 'in' && (!c.responsavel_id || c.responsavel_id === u.id || pode(u, 'todos')); }).map(function (c) { return { id: c.id, nome: c.nome, ultima_msg: c.ultima_msg, ultima_msg_em: c.ultima_msg_em, responsavel: us[c.responsavel_id] || '' }; }).slice(0, 30),
       notas: pode(u, 'financeiro') ? P.tabela('Notas').filter(function (n) { return n.status === 'pendente' || n.status === 'cancelar'; }).length : 0,
       posts_celular: P.tabela('Posts').filter(function (p) { return p.status === 'manual'; }).map(function (p) { return { id: p.id, titulo: p.titulo, tipo: p.tipo, agendar_em: p.agendar_em, material_url: p.material_url || '' }; }).slice(0, 20),
-      ia_erro: cfg().IA_ERRO || ''
+      ia_erro: cfg().IA_ERRO || '',
+      estudio_auto: cfg().ESTUDIO_AUTO !== 'NAO'
     };
   };
   R['mesa.resumo'] = function (u) { exige(u, 'relatorios'); return PD.mesa(u); };

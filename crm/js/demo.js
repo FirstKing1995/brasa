@@ -32,6 +32,7 @@
       (cd.seasons || []).forEach(function (s) { nl += (s.lessons || []).length; });
       return { ok: true, data: { id: 'cDEMO' + Date.now().toString(36), slug: String(cd.title || 'curso').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-'), title: cd.title, lessons: nl, admin_link: new URL('../admin.html#/cursos', location.href).href } };
     }
+    if (body.action === 'bridgeLessonsImport') return { ok: true, data: { id: body.course_id || 'cDEMOYT', title: body.course_title, status: 'draft', created: !body.course_id, updated: 0, added: (body.lessons || []).length, admin_link: new URL('../admin.html#/cursos', location.href).href } };
     if (body.action === 'bridgeRefund') return { ok: true, data: { ok: true, order_id: body.order_id, amount: (brasaCursos()[0] || { price: 597 }).price } };
     if (body.action === 'bridgeChatReply') return { ok: true, data: { id: 'g' + Date.now() } };
     if (body.action === 'bridgeSearch') return { ok: true, data: { results: [{ course: (brasaCursos()[0] || { title: 'Tráfego Sem Romance' }).title, lesson: 'T1:E3 Público e orçamento', text: 'Comece com um público amplo, orçamento baixo por 3 dias e só então corte o que não converte. O erro mais comum é mexer na campanha antes de ela aprender.', link: new URL('../index.html#/', location.href).href }] } };
