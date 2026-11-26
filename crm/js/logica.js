@@ -7,7 +7,7 @@
    Tudo o que depende do lugar (ler/gravar dados, chamar URLs, cache, hora)
    chega pelo objeto P ("plataforma"). Nada aqui conhece planilha ou navegador.
    ========================================================================== */
-var PRUMO_VERSAO = '1.10.0';
+var PRUMO_VERSAO = '1.10.1';
 
 var PRUMO_ESQUEMA = {
   Usuarios: ['id', 'nome', 'email', 'senha_hash', 'salt', 'perfil', 'ativo', 'recebe_leads', 'cor', 'ultimo_acesso', 'criado_em', 'meta_valor', 'meta_reunioes', 'permissoes'],
@@ -4488,9 +4488,11 @@ function PrumoLogica(P) {
         '1) Liste os vídeos (.mp4, .mov, .mkv, .webm) da pasta e das subpastas com a ferramenta Glob. Ignore pastas de brutos, anúncios ou rascunhos (BRUTOS, ADS, RMK, MATERIAL de apoio sem aula) e arquivos com 0 bytes ou que pareçam cortes soltos.\n' +
         '2) Ordene pela aula (boas-vindas primeiro, depois AULA 1, 2, 3..., aulas extras no fim).\n' +
         (d.feitos && d.feitos.length ? '3) Estes arquivos JÁ foram enviados, pule: ' + d.feitos.join(' | ') + '\n' : '3) Nenhum arquivo foi enviado ainda.\n') +
-        '4) Envie no máximo ' + d.max + ' vídeo(s) nesta rodada. Para cada um, em https://studio.youtube.com (canal já logado): Criar > Enviar vídeos, envie o arquivo pelo caminho completo com a ferramenta de envio de arquivo, título = nome limpo da aula (sem extensão, sem "parte" repetida, até 100 caracteres), descrição curta "Aula do curso ' + d.curso + '", marque "Não, não é conteúdo para crianças", em Visibilidade escolha "Não listado" e salve. Não precisa esperar o processamento em HD: basta o envio terminar e o link existir. Copie o link do vídeo (youtu.be/...).\n' +
+        '4) Primeiro abra https://studio.youtube.com > Conteúdo (canal já logado) e procure vídeos que JÁ estão no canal com o nome de cada arquivo (o YouTube usa o nome do arquivo como título): rascunhos, privados ou com envio em andamento. Esses o dono já arrastou: só termine os detalhes (veja o item 5) e copie o link. Não envie de novo.\n' +
+        '5) Para cada aula (no máximo ' + d.max + ' nesta rodada): título = nome limpo da aula (sem extensão, até 100 caracteres), descrição curta "Aula do curso ' + d.curso + '", marque "Não, não é conteúdo para crianças", em Visibilidade escolha "Não listado" e salve. Não precisa esperar o processamento em HD. Copie o link (youtu.be/...).\n' +
+        '6) Só tente enviar você mesmo, com a ferramenta de envio de arquivo, os arquivos de até 10 MB que ainda não estão no canal. Os maiores que 10 MB e que ainda não estão no canal NÃO tente enviar: liste em "pendentes_envio" (o dono vai arrastar no Studio).\n' +
         '5) Não mude nada no canal além dos vídeos enviados. Não publique como público.\n\n' +
-        'No JSON final inclua "enviados": [{"arquivo": "caminho completo", "titulo": "...", "url": "https://youtu.be/...", "duracao_min": minutos aproximados}], "falhas": [{"arquivo": "...", "motivo": "..."}] e "restantes": quantos vídeos da pasta ainda faltam enviar.';
+        'No JSON final inclua "enviados": [{"arquivo": "caminho completo", "titulo": "...", "url": "https://youtu.be/...", "duracao_min": minutos aproximados}], "pendentes_envio": [{"arquivo": "caminho completo", "mb": tamanho}], "falhas": [{"arquivo": "...", "motivo": "..."}] e "restantes": quantos vídeos da pasta ainda faltam (contando os pendentes).';
       tempo = 90;
     } else if (m.tipo === 'livre') {
       txt = 'MISSÃO pedida pelo dono do sistema:\n<<<\n' + U.cap(m.instrucoes, 4000) + '\n>>>';
@@ -4547,7 +4549,15 @@ function PrumoLogica(P) {
       });
     }
     var extra = '';
-    if (m.tipo === 'youtube.subir') extra = MI.aulasEnviadas(m, d, r, efeitos);
+    if (m.tipo === 'youtube.subir') {
+      extra = MI.aulasEnviadas(m, d, r, efeitos);
+      var pend = (Array.isArray(r.pendentes_envio) ? r.pendentes_envio : []).filter(function (x) { return x && U.str(x.arquivo).trim(); });
+      if (pend.length && st !== 'precisa_login') {
+        st = efeitos.length ? 'parcial' : 'concluida';
+        PD.criar({ tipo: 'video', titulo: 'Arrastar ' + pend.length + ' aula' + (pend.length > 1 ? 's' : '') + ' de ' + d.curso + ' no YouTube Studio', briefing: 'O navegador não deixa o Claude enviar arquivos grandes. Faça só isto:\n1. Abra studio.youtube.com no Chrome (canal Cambraia).\n2. Clique em Criar > Enviar vídeos e selecione TODOS estes arquivos de uma vez (pasta ' + d.pasta + '):\n' + pend.map(function (x) { return '   - ' + U.str(x.arquivo).split(/[\\/]/).pop() + (x.mb ? ' (' + Math.round(U.num(x.mb)) + ' MB)' : ''); }).join('\n') + '\n3. Pode fechar a janela de detalhes assim que os envios começarem: o Claude termina título, "não listado" e os links.\n4. Quando os envios terminarem, clique em "Já enviei" aqui.', formato: 'Não precisa preencher nada no YouTube.', origem_tipo: 'youtube_envio', origem_id: m.id, criado_por: 'Produto (IA)' });
+        extra = (extra ? extra + ' ' : '') + pend.length + ' aula(s) grande(s) esperando você arrastar no YouTube Studio (pedido na Minha mesa).';
+      }
+    }
     if (m.tipo === 'estudio.editar') {
       var final = (Array.isArray(r.saidas_urls) ? r.saidas_urls : []).filter(function (x) { return /^https:\/\//.test(U.str(x)); })[0];
       var post = P.tabela('Posts').filter(function (x) { return x.id === d.post_id; })[0];
@@ -4580,10 +4590,10 @@ function PrumoLogica(P) {
     } catch (e) { msg = 'Os vídeos subiram, mas não consegui ligar na BRASA: ' + e.message + '. Os links estão no resultado.'; }
     var feitos = (d.feitos || []).concat(ok.map(function (e) { return U.cap(e.arquivo, 300); }));
     P.atualizar('Missoes', m.id, { dados: U.cap(JSON.stringify(Object.assign({}, d, { feitos: feitos })), 45000) });
-    if (U.num(r.restantes) > 0 && U.num(d.rodada) < 20) {
+    if (U.num(r.restantes) > 0 && U.num(d.rodada) < 20 && !(Array.isArray(r.pendentes_envio) && r.pendentes_envio.length)) {
       MI.criar({ tipo: 'youtube.subir', titulo: 'Subir aulas de ' + d.curso + ' no YouTube (rodada ' + (U.num(d.rodada) + 2) + ')', dados: Object.assign({}, d, { feitos: feitos, rodada: U.num(d.rodada) + 1 }), origem: 'equipe' }, { nome: 'Produto' });
       msg += ' Faltam ' + U.num(r.restantes) + ': a próxima rodada já está na fila.';
-    } else if (U.num(r.restantes) <= 0) {
+    } else if (U.num(r.restantes) <= 0 && !(Array.isArray(r.pendentes_envio) && r.pendentes_envio.length)) {
       PD.criar({ tipo: 'outro', titulo: 'Revisar e publicar o curso ' + d.curso, briefing: 'As aulas de ' + d.curso + ' já estão no YouTube (não listadas) e ligadas ao curso na BRASA. Confira a ordem, capas e preço no ADM e publique quando quiser. Se alguma aula estiver defasada, anote aqui o que regravar.', origem_tipo: 'curso_youtube', origem_id: d.curso_id || d.curso, criado_por: 'Produto (IA)' });
     }
     return msg;
@@ -4760,13 +4770,17 @@ function PrumoLogica(P) {
   PD.entregar = function (p, links, nota, user) {
     var arqs = U.json(p.arquivos, []) || [];
     (links || []).forEach(function (l) { var url = U.str(l.url || l).trim(); if (/^(https:\/\/|blob:)/.test(url)) arqs.push({ nome: U.cap(l.nome || 'link', 120), url: U.cap(url, 600) }); });
-    if (!arqs.length) throw new Error('Envie um arquivo ou cole um link (https://).');
+    if (!arqs.length && p.origem_tipo !== 'youtube_envio') throw new Error('Envie um arquivo ou cole um link (https://).');
     var mud = { status: 'enviado', arquivos: JSON.stringify(arqs.slice(0, 30)), nota: U.cap(nota, 1000), entregue_em: P.agora() };
     P.atualizar('Pedidos', p.id, mud);
     if (p.origem_tipo === 'post') {
       var post = P.tabela('Posts').filter(function (x) { return x.id === p.origem_id; })[0];
       if (post) P.atualizar('Posts', post.id, { material_url: arqs[0].url, atualizado_em: P.agora() });
       if (post && post.tipo === 'reels' && p.tipo === 'video') PD.estudio(post, arqs);
+    }
+    if (p.origem_tipo === 'youtube_envio') {
+      var mo = P.tabela('Missoes').filter(function (x) { return x.id === p.origem_id; })[0];
+      if (mo) { var dd = U.json(mo.dados, {}) || {}; MI.criar({ tipo: 'youtube.subir', titulo: 'Terminar as aulas de ' + dd.curso + ' no YouTube', dados: Object.assign({}, dd, { max: 8, rodada: U.num(dd.rodada) + 1 }), origem: 'equipe' }, user); }
     }
     hist('', '', user, 'pedido', 'Material entregue: ' + p.titulo + ' (' + arqs.length + ' arquivo' + (arqs.length > 1 ? 's' : '') + ')');
     return Object.assign(p, mud);

@@ -59,6 +59,7 @@
     var ce = C.$('#ms-estudio', r); if (ce) ce.onchange = function () { C.api('config.salvar', { config: { ESTUDIO_AUTO: ce.checked ? 'SIM' : 'NAO' } }).then(function () { C.toast('Salvo', 'ok'); }).catch(function (e) { C.toast(e.message, 'erro'); }); };
     C.$$('[data-ir]', r).forEach(function (b) { b.onclick = function () { C.ir(b.dataset.ir); }; });
     C.$$('[data-pd-entregar]', r).forEach(function (b) { b.onclick = function () { entregar(d.pedidos.filter(function (x) { return x.id === b.dataset.pdEntregar; })[0]); }; });
+    C.$$('[data-pd-feito]', r).forEach(function (b) { b.onclick = function () { C.comBotao(b, function () { return C.api('pedido.entregar', { id: b.dataset.pdFeito, links: [], nota: 'Enviado no YouTube Studio' }).then(function () { C.toast('Certo! O Claude vai terminar as aulas no YouTube.', 'ok'); carregar(); }); }); }; });
     C.$$('[data-pd-ver]', r).forEach(function (b) { b.onclick = function () { verPedido(d.pedidos.filter(function (x) { return x.id === b.dataset.pdVer; })[0]); }; });
     C.$$('[data-pd-cancelar]', r).forEach(function (b) {
       b.onclick = function () {
@@ -80,7 +81,7 @@
       '<b style="display:block;margin-top:4px">' + esc(p.titulo) + '</b>' +
       (p.prazo ? '<span class="status ' + (p.atrasado ? 'st-erro' : 'st-aviso') + '" style="margin-top:6px;display:inline-block">' + (p.atrasado ? 'Atrasado: ' : 'Até ') + esc(dataBr(p.prazo)) + '</span>' : '') + '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn peq" data-pd-ver="' + esc(p.id) + '">' + ic('olho') + ' Briefing</button>' +
-      '<button class="btn pri peq" data-pd-entregar="' + esc(p.id) + '">' + ic('upload') + ' Entregar</button>' +
+      (p.origem_tipo === 'youtube_envio' ? '<button class="btn pri peq" data-pd-feito="' + esc(p.id) + '">' + ic('check') + ' Já enviei</button>' : '<button class="btn pri peq" data-pd-entregar="' + esc(p.id) + '">' + ic('upload') + ' Entregar</button>') +
       '<button class="btn fantasma peq ic" title="Cancelar pedido" aria-label="Cancelar pedido" data-pd-cancelar="' + esc(p.id) + '">' + ic('x') + '</button></div></div></div>';
   }
   function verPedido(p) {
